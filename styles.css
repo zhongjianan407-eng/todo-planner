@@ -794,3 +794,84 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   .focus-pill { right: 12px; bottom: 12px; }
   .focus-controls { flex-wrap: wrap; }
 }
+
+/* ---------------- 月视图 ---------------- */
+
+.mon-head-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.mon-wd {
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.mon-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.mon-cell {
+  min-height: 104px;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 5px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  overflow: hidden;
+}
+.mon-cell:nth-child(7n) { border-right: none; }
+.mon-cell:hover { background: #f8f9ff; }
+.mon-cell.dim { background: #fcfcfd; }
+.mon-cell.dim .mon-day { color: #c2c8d2; }
+.mon-cell.has-slot { background-image: linear-gradient(180deg, rgba(79, 70, 229, 0.04), transparent 60%); }
+.mon-cell.today { background: var(--accent-soft); }
+.mon-cell.today .mon-day {
+  background: var(--accent); color: #fff;
+  border-radius: 50%; width: 18px; height: 18px;
+  display: inline-grid; place-items: center;
+}
+
+.mon-head { display: flex; align-items: center; justify-content: space-between; }
+.mon-day { font-size: 11.5px; font-weight: 600; }
+.mon-load { font-size: 9.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.mon-items { display: grid; gap: 2px; min-width: 0; }
+.mon-item {
+  display: block;
+  font-size: 10px;
+  line-height: 1.35;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border-left: 3px solid var(--c);
+  background: color-mix(in srgb, var(--c) 10%, white);
+  color: color-mix(in srgb, var(--c) 62%, #14171c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mon-item i {
+  font-style: normal;
+  opacity: 0.65;
+  margin-right: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.mon-more { font-size: 9.5px; color: var(--muted); padding-left: 2px; }
+
+@media (max-width: 720px) {
+  .mon-cell { min-height: 74px; padding: 3px; }
+  .mon-item i { display: none; }
+  .mon-item { font-size: 9px; border-left-width: 2px; padding: 1px 3px; }
+  .mon-load { display: none; }
+}
+
+.field-note { font-size: 11px; color: var(--muted); margin-top: 2px; }

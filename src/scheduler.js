@@ -203,8 +203,23 @@ function scheduledMinutesOf(taskId, allocations) {
 export function schedule({ state, weekStart = new Date(), now = new Date(), dryRun = false }) {
   const { tasks, slots } = state;
   // 排程跨度：允许跨周。1~180 天，防止误设成几年导致卡死
-  const days = Math.max(1, Math.min(180, Number(state.settings?.horizonDays) || 7));
   const anchor = startOfWeek(weekStart);
+  const configured = Math.max(1, Math.min(180, Number(state.settings?.horizonDays) || 7));
+
+  // 自动延伸：至少要覆盖到最远的 DDL。
+  // 否则「明明还有 3 周才到期，却因为窗口只有 7 天而报排不进」——这正是长期任务的核心诉求。
+  let farthest = 0;
+  for (const t of tasks) {
+    if (!t.dueAt) continue;
+    const ts = new Date(t.dueAt).getTime();
+    if (Number.isFinite(ts) && ts > farthest) farthest = ts;
+  }
+  let days = configured;
+  if (farthest > anchor.getTime()) {
+    const need = Math.ceil(minutesBetween(anchor, new Date(farthest)) / (24 * 60)) + 1;
+    days = Math.max(days, need);
+  }
+  days = Math.min(180, days);
   const instancesAll = buildSlotInstances(slots, anchor, days);
   const instances = instancesAll.filter((i) => i.end > now);
 

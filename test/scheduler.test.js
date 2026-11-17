@@ -701,6 +701,50 @@ test('跨度设为 0 或非法值时回落到 7 天', () => {
   assert.equal(schedule({ state: st, weekStart: BASE, now: NOW }).stats.days, 7);
 });
 
+test('跨度会自动延伸到最远的 DDL，不会被 7 天窗口卡住', () => {
+  const due = addDays(BASE, 20); // 三周后到期
+  const task = makeTask({
+    title: '三周后交的论文',
+    estMin: 360,
+    minChunk: 60,
+    maxChunk: 120,
+    dueAt: due.toISOString(),
+    attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+  });
+  const st = mkState({ tasks: [task], slots: mondaySlots() });
+  st.settings.horizonDays = 7; // 用户设的跨度很短
+
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.ok(r.stats.days >= 21, `跨度应自动延伸到至少 21 天，实际 ${r.stats.days}`);
+
+  const total = r.created.reduce((s, a) => s + dur(a), 0);
+  assert.equal(total, 360, '应完整排入 360 分钟');
+  assert.equal(r.unscheduled.length, 0);
+
+  const dates = [...new Set(r.created.map((a) => a.date))].sort();
+  assert.ok(dates.length >= 3, `应跨至少 3 个周一，实际 ${dates.length}`);
+});
+
+test('没有 DDL 的任务不会把跨度撑大', () => {
+  const task = makeTask({ title: '无期限', estMin: 60, attrs: [{ attrId: 'attr_deep', strength: 'require' }] });
+  const st = mkState({ tasks: [task], slots: mondaySlots() });
+  st.settings.horizonDays = 7;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.equal(r.stats.days, 7);
+});
+
+test('DDL 再远也不会超过 180 天上限', () => {
+  const task = makeTask({
+    title: '两年后',
+    estMin: 60,
+    dueAt: addDays(BASE, 730).toISOString(),
+    attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+  });
+  const st = mkState({ tasks: [task], slots: mondaySlots() });
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.ok(r.stats.days <= 180, `跨度被夹在 180 天内，实际 ${r.stats.days}`);
+});
+
 /* ============ 15. 跨度内无可用时段 ============ */
 
 console.log('\n[15] 跨度内没有可用时段时的原因');

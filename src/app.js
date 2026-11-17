@@ -81,8 +81,9 @@ const ui = {
   selectedAlloc: null,
   busy: false,
   toast: null,
-  view: 'week', // 'day' | 'week'
+  view: 'week', // 'day' | 'week' | 'month'
   dayDate: new Date(),
+  monthDate: new Date(),
   focusOpen: false,
 };
 
@@ -670,17 +671,18 @@ function renderSettingsModal(state) {
       <div class="modal-head"><h3>设置</h3><button class="x" data-action="close-modal">✕</button></div>
       <div class="modal-body">
         <label class="field">
-          <span>自动排程跨度</span>
+          <span>排程跨度下限</span>
           <select class="input" data-setting="horizonDays">
             ${[7, 14, 21, 30, 60]
               .map(
                 (d) =>
                   `<option value="${d}" ${Number(s.horizonDays) === d ? 'selected' : ''}>${
-                    d === 7 ? '本周 7 天（不跨周）' : `未来 ${d} 天（跨 ${Math.ceil(d / 7)} 周）`
+                    d === 7 ? '至少 7 天' : `至少 ${d} 天（跨 ${Math.ceil(d / 7)} 周）`
                   }</option>`,
               )
               .join('')}
           </select>
+          <span class="field-note">实际范围会自动延伸到最远的 DDL（上限 180 天）。</span>
         </label>
         <label class="field">
           <span>自动拆分最多几步</span>
@@ -787,8 +789,8 @@ function render() {
             : ''
         }
         <button class="btn primary" data-action="run-schedule" ${ui.busy ? 'disabled' : ''}
-          title="从本周开始，按设置的跨度往后排">
-          ${ui.busy ? '排程中…' : `⚡ 排程 ${state.settings.horizonDays ?? 14} 天`}
+          title="从本周开始往后排，范围会自动延伸到最远的 DDL">
+          ${ui.busy ? '排程中…' : '⚡ 自动排程'}
         </button>
       </div>
     </header>
@@ -797,7 +799,13 @@ function render() {
       ${renderTaskPanel(state)}
       <section class="panel panel-calendar">
         ${renderCalendarToolbar()}
-        ${ui.view === 'day' ? renderDay(state) : renderWeek(state)}
+        ${
+          ui.view === 'month'
+            ? renderMonth(state)
+            : ui.view === 'day'
+              ? renderDay(state)
+              : renderWeek(state)
+        }
         ${
           ui.selectedAlloc
             ? `<div class="alloc-toolbar">
@@ -1027,12 +1035,15 @@ function renderCalendarToolbar() {
     <div class="segmented" role="tablist">
       <button class="seg ${ui.view === 'day' ? 'on' : ''}" data-action="set-view" data-id="day" role="tab">日</button>
       <button class="seg ${ui.view === 'week' ? 'on' : ''}" data-action="set-view" data-id="week" role="tab">周</button>
+      <button class="seg ${ui.view === 'month' ? 'on' : ''}" data-action="set-view" data-id="month" role="tab">月</button>
     </div>
     <span class="grow"></span>
     <span class="cal-hint">${
       ui.view === 'day'
         ? '拖分片可改时间 / 拖底边改时长 / 点 ⏱ 开始专注'
-        : '拖分片可换时段 / 拖分片底边改时长 / 拖时段底边改结束时间'
+        : ui.view === 'month'
+          ? '点击某一天跳到日视图'
+          : '拖分片可换时段 / 拖分片底边改时长 / 拖时段底边改结束时间'
     }</span>
   </div>`;
 }
@@ -1177,6 +1188,98 @@ function renderDay(state) {
              </div>`
       }
     </div>
+  </div>`;
+}
+
+/* ---------------- 月视图 ---------------- */
+
+function renderMonth(state) {
+  const base = ui.monthDate;
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const first = new Date(year, month, 1);
+  // 周一为一周起始
+  const gridStart = addDays(first, -(isoWeekday(first) - 1));
+  const todayKey = dateKey(new Date());
+
+  const byDate = new Map();
+  for (const a of state.allocations || []) {
+    if (!byDate.has(a.date)) byDate.set(a.date, []);
+    byDate.get(a.date).push(a);
+  }
+  const weeklySlots = new Set(
+    (state.slots || []).filter((s) => s.kind !== 'once').map((s) => Number(s.weekday)),
+  );
+  const onceDates = new Set(
+    (state.slots || []).filter((s) => s.kind === 'once').map((s) => s.date),
+  );
+
+  const cells = [];
+  for (let i = 0; i < 42; i += 1) {
+    const d = addDays(gridStart, i);
+    const key = dateKey(d);
+    const inMonth = d.getMonth() === month;
+    const isToday = key === todayKey;
+    const allocs = (byDate.get(key) || []).sort(
+      (a, b) => new Date(a.start) - new Date(b.start),
+    );
+    const totalMin = allocs.reduce(
+      (sum, a) => sum + minutesBetween(new Date(a.start), new Date(a.end)),
+      0,
+    );
+    const hasSlot = weeklySlots.has(isoWeekday(d)) || onceDates.has(key);
+
+    const items = allocs
+      .slice(0, 3)
+      .map((a) => {
+        const t = state.tasks.find((x) => x.id === a.taskId);
+        const parent = t?.parentId ? state.tasks.find((x) => x.id === t.parentId) : null;
+        const label = parent ? `${parent.title} · ${t?.title}` : t?.title ?? '';
+        const colorAttr = (t?.attrs || []).find((x) => x.strength === 'require');
+        const c = colorAttr ? attrById(state, colorAttr.attrId)?.color : '#636e72';
+        return `<span class="mon-item" style="--c:${c}" title="${esc(label)} ${fmtHM(new Date(a.start))}–${fmtHM(new Date(a.end))}">
+          <i>${fmtHM(new Date(a.start))}</i>${esc(label)}
+        </span>`;
+      })
+      .join('');
+
+    cells.push(`
+      <div class="mon-cell ${inMonth ? '' : 'dim'} ${isToday ? 'today' : ''} ${
+        hasSlot ? 'has-slot' : ''
+      }" data-action="open-day" data-id="${key}" title="${key}${hasSlot ? ' · 有时段' : ''}">
+        <div class="mon-head">
+          <span class="mon-day">${d.getDate()}</span>
+          ${totalMin ? `<span class="mon-load">${fmtDuration(totalMin)}</span>` : ''}
+        </div>
+        <div class="mon-items">
+          ${items}
+          ${allocs.length > 3 ? `<span class="mon-more">+${allocs.length - 3}</span>` : ''}
+        </div>
+      </div>`);
+  }
+
+  const monthTotal = [...byDate.entries()]
+    .filter(([k]) => parseDateKey(k).getMonth() === month)
+    .reduce(
+      (sum, [, list]) =>
+        sum + list.reduce((x, a) => x + minutesBetween(new Date(a.start), new Date(a.end)), 0),
+      0,
+    );
+
+  return `
+  <div class="monthview">
+    <div class="week-nav">
+      <button class="btn ghost sm" data-action="month-prev">← 上个月</button>
+      <span class="week-label">${year} 年 ${month + 1} 月</span>
+      <button class="btn ghost sm" data-action="month-next">下个月 →</button>
+      <button class="btn ghost sm" data-action="month-today">回到本月</button>
+      <button class="btn ghost sm" data-action="new-slot">+ 时段</button>
+      <span class="week-hint">已排 ${fmtDuration(monthTotal)}</span>
+    </div>
+    <div class="mon-head-row">
+      ${WEEKDAYS.map((w) => `<div class="mon-wd">${w.short}</div>`).join('')}
+    </div>
+    <div class="mon-grid">${cells.join('')}</div>
   </div>`;
 }
 
@@ -1629,7 +1732,25 @@ document.addEventListener('click', async (e) => {
       toast('属性已删除');
       break;
     case 'set-view':
-      ui.view = id === 'day' ? 'day' : 'week';
+      ui.view = ['day', 'week', 'month'].includes(id) ? id : 'week';
+      if (ui.view === 'month') ui.monthDate = new Date(ui.dayDate);
+      render();
+      break;
+    case 'open-day':
+      ui.dayDate = parseDateKey(id);
+      ui.view = 'day';
+      render();
+      break;
+    case 'month-prev':
+      ui.monthDate = new Date(ui.monthDate.getFullYear(), ui.monthDate.getMonth() - 1, 1);
+      render();
+      break;
+    case 'month-next':
+      ui.monthDate = new Date(ui.monthDate.getFullYear(), ui.monthDate.getMonth() + 1, 1);
+      render();
+      break;
+    case 'month-today':
+      ui.monthDate = new Date();
       render();
       break;
     case 'day-prev':

@@ -430,6 +430,43 @@ check('任意重绘都不丢滚动位置', () => {
   assert.equal($('.dv-scroll').scrollTop, 500, '日视图滚动位置丢了');
 });
 
+console.log('\n[UI] 月视图');
+
+check('切换到月视图', () => {
+  click($('[data-action="set-view"][data-id="month"]'));
+  assert.ok($('.monthview'), '未渲染月视图');
+  assert.equal($$('.mon-cell').length, 42, '应固定渲染 6 周 × 7 天');
+  assert.equal($$('.mon-wd').length, 7, '表头应有 7 个星期');
+});
+
+check('今天有高亮', () => {
+  assert.equal($$('.mon-cell.today').length, 1, '应恰好有一个今天');
+});
+
+check('有排程的日子显示分片', () => {
+  assert.ok($$('.mon-item').length > 0, '整月没有任何分片');
+});
+
+check('月份切换', () => {
+  const before = $('.week-label').textContent;
+  click($('[data-action="month-next"]'));
+  assert.notEqual($('.week-label').textContent, before, '月份没有前进');
+  click($('[data-action="month-prev"]'));
+  assert.equal($('.week-label').textContent, before, '退回来应还原');
+});
+
+check('点某一天跳到日视图', () => {
+  const cell = $$('.mon-cell').find((c) => !c.classList.contains('dim'));
+  assert.ok(cell, '没有本月内的格子');
+  const key = cell.dataset.id;
+  click(cell);
+  assert.ok($('.dayview'), '点击后没有进入日视图');
+  assert.match($('.dv-scroll').textContent + $('.week-nav').textContent, /\d+\/\d+/, '日视图没显示日期');
+  // 选中的应是那一天：月视图里该格的日号，与日视图标题里的日期一致
+  const day = Number(key.split('-')[2]);
+  assert.ok($('.week-label').textContent.includes(String(day)), `日视图日期不对，期望 ${key}`);
+});
+
 console.log('\n[UI] 专注计时');
 
 check('切回周视图并找到计时按钮', () => {
@@ -568,7 +605,7 @@ check('顶栏按钮显示当前排程跨度，设置里能改', () => {
   assert.ok(sel, '设置里没有跨度选项');
   assert.ok(sel.options.length >= 4, '跨度可选项太少');
   click($('.modal-head .x'));
-  assert.match($('[data-action="run-schedule"]').textContent, /排程 \d+ 天/, '按钮没显示跨度');
+  assert.match($('[data-action="run-schedule"]').textContent, /排程/, '按钮文案异常');
 });
 
 check('跨度变大，可排容量随之增加', () => {
@@ -576,8 +613,9 @@ check('跨度变大，可排容量随之增加', () => {
   const base = P.getState();
   const r7 = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 7 } }, weekStart: new Date() });
   const r30 = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 30 } }, weekStart: new Date() });
-  assert.equal(r7.stats.days, 7);
-  assert.equal(r30.stats.days, 30);
+  // 跨度会自动延伸到最远 DDL，所以设成 7 天时实际可能更长
+  assert.ok(r7.stats.days >= 7 && r7.stats.days < 30, `7 天下限实际 ${r7.stats.days} 天`);
+  assert.ok(r30.stats.days >= 30, `30 天下限实际 ${r30.stats.days} 天`);
   assert.ok(r30.stats.capacityMin > r7.stats.capacityMin, '30 天的容量应大于 7 天');
 });
 
