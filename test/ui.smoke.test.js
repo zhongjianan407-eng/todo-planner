@@ -723,6 +723,70 @@ check('10 小时任务：短期排不满，拉长跨度后排满', () => {
   assert.equal(r60.unscheduled.length, 0, '拉长跨度后应全部排入');
 });
 
+console.log('\n[UI] 属性管理（首页可直接编辑）');
+
+let attrsBackup = null;
+
+check('首页有属性管理入口并打开', () => {
+  const P = window.__PLANNER__;
+  attrsBackup = P.getState().attributes.map((a) => ({ ...a }));
+  click($('[data-action="open-attrs"]'));
+  assert.ok($('.modal'), '弹窗未打开');
+  assert.ok($$('.attr-item').length >= 3, '属性行太少');
+  assert.ok($('[data-field="newAttrName"]'), '缺少新增输入框');
+});
+
+check('改名生效', () => {
+  const P = window.__PLANNER__;
+  const input = $('[data-attr-name]');
+  const id = input.dataset.attrName;
+  input.value = '改过的名字';
+  input.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.equal(P.getState().attributes.find((a) => a.id === id).name, '改过的名字');
+});
+
+check('换颜色生效', () => {
+  const P = window.__PLANNER__;
+  const before = P.getState().attributes[0].color;
+  click($('[data-action="cycle-attr-color"]'));
+  assert.notEqual(P.getState().attributes[0].color, before, '颜色没变');
+});
+
+check('调整顺序生效', () => {
+  const P = window.__PLANNER__;
+  const secondId = P.getState().attributes[1].id;
+  const ups = $$('[data-action="move-attr"][data-dir="-1"]');
+  click(ups[1]); // 第二行的「上移」
+  assert.equal(P.getState().attributes[0].id, secondId, '没有移到第一位');
+});
+
+check('新增属性生效', () => {
+  const P = window.__PLANNER__;
+  const n = P.getState().attributes.length;
+  const input = document.querySelector('[data-field="newAttrName"]');
+  input.value = '新技能';
+  click($('[data-action="add-attr"]'));
+  assert.equal(P.getState().attributes.length, n + 1);
+  assert.ok(P.getState().attributes.some((a) => a.name === '新技能'));
+});
+
+check('删除属性生效，且不会删掉任务本身', () => {
+  const P = window.__PLANNER__;
+  const n = P.getState().attributes.length;
+  const tasksBefore = P.getState().tasks.length;
+  const dels = $$('[data-action="del-attr"]');
+  click(dels[dels.length - 1]);
+  assert.equal(P.getState().attributes.length, n - 1);
+  assert.equal(P.getState().tasks.length, tasksBefore, '任务数量不该变');
+});
+
+check('还原现场', () => {
+  const P = window.__PLANNER__;
+  P.update((s) => ({ ...s, attributes: attrsBackup }));
+  assert.equal(P.getState().attributes.length, attrsBackup.length);
+  click($('.modal-head .x'));
+});
+
 check('整个过程没有抛未捕获错误', () => {
   assert.deepEqual(errors, []);
 });

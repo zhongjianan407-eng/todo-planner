@@ -5,6 +5,7 @@
 
 import {
   WEEKDAYS,
+  ATTR_PALETTE,
   PRIORITY_LABEL,
   STRENGTH_LABEL,
   addDays,
@@ -301,6 +302,8 @@ function renderTaskPanel(state) {
                  style="--c:${a.color}" data-action="filter-attr" data-id="${a.id}">${esc(a.name)}</button>`,
           )
           .join('')}
+        <button class="chip clickable attr-manage" data-action="open-attrs"
+          title="管理属性">⚙ 属性</button>
         <label class="tiny-check"><input type="checkbox" data-field="showDone" ${
           ui.showDone ? 'checked' : ''
         }> 显示已完成</label>
@@ -728,25 +731,58 @@ function renderSettingsModal(state) {
 
 function renderAttrsModal(state) {
   if (!ui.attrsOpen) return '';
+
+  const usage = (id) => {
+    const tasks = state.tasks.filter((t) => (t.attrs || []).some((x) => x.attrId === id)).length;
+    const slots = state.slots.filter((s) => (s.attrs || []).includes(id)).length;
+    if (!tasks && !slots) return '未使用';
+    return `${tasks} 任务 · ${slots} 时段`;
+  };
+
   return `
   <div class="overlay" data-action="close-modal">
     <div class="modal modal-sm" data-stop="1">
-      <div class="modal-head"><h3>属性字典</h3><button class="x" data-action="close-modal">✕</button></div>
+      <div class="modal-head">
+        <h3>属性管理</h3>
+        <button class="x" data-action="close-modal">✕</button>
+      </div>
       <div class="modal-body">
-        <div class="hint">属性同时挂在任务和时段上，排程靠它做匹配。</div>
+        <div class="hint">
+          属性同时挂在<strong>任务</strong>和<strong>时段</strong>上，排程靠它做匹配。
+          改名字、换颜色、调整顺序都会立刻生效。
+        </div>
+
         <ul class="attr-list">
-          ${state.attributes
-            .map(
-              (a) => `<li><span class="dot" style="--c:${a.color}"></span>
-                <span class="grow">${esc(a.name)}</span>
-                <button class="link danger" data-action="del-attr" data-id="${a.id}">删除</button></li>`,
-            )
-            .join('')}
+          ${
+            state.attributes.length === 0
+              ? '<li class="attr-empty">还没有属性，下面加一个</li>'
+              : state.attributes
+                  .map(
+                    (a, i) => `
+            <li class="attr-item">
+              <button class="swatch" style="--c:${a.color}" data-action="cycle-attr-color"
+                data-id="${a.id}" title="点击换颜色"></button>
+              <input class="input sm attr-name" data-attr-name="${a.id}"
+                value="${esc(a.name)}" maxlength="12" spellcheck="false">
+              <span class="attr-usage">${usage(a.id)}</span>
+              <span class="attr-ops">
+                <button data-action="move-attr" data-id="${a.id}" data-dir="-1"
+                  title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>
+                <button data-action="move-attr" data-id="${a.id}" data-dir="1"
+                  title="下移" ${i === state.attributes.length - 1 ? 'disabled' : ''}>↓</button>
+                <button class="link danger" data-action="del-attr" data-id="${a.id}">删</button>
+              </span>
+            </li>`,
+                  )
+                  .join('')
+          }
         </ul>
+
         <div class="field-row">
-          <input class="input" data-field="newAttrName" placeholder="新属性名称，如「深度工作」">
+          <input class="input" data-field="newAttrName" placeholder="新属性名称，如「深度工作」" maxlength="12">
           <button class="btn primary" data-action="add-attr">添加</button>
         </div>
+        <div class="hint">删掉属性时，任务和时段上对应的标记会一起移除，但任务本身不会消失。</div>
       </div>
     </div>
   </div>`;
@@ -1632,6 +1668,20 @@ document.addEventListener('input', (e) => {
 });
 
 document.addEventListener('change', (e) => {
+  // 属性改名：走 change 而不是 input，避免每敲一个字就重绘丢失焦点
+  const attrId = e.target.dataset.attrName;
+  if (attrId) {
+    const name = e.target.value.trim();
+    if (!name) {
+      render();
+      return;
+    }
+    update((s2) => ({
+      ...s2,
+      attributes: s2.attributes.map((a) => (a.id === attrId ? { ...a, name } : a)),
+    }));
+    return;
+  }
   if (e.target.dataset.focusMin !== undefined) {
     if (focus.session) {
       focus.session = setPlannedMinutes(focus.session, Number(e.target.value));
@@ -1860,15 +1910,41 @@ document.addEventListener('click', async (e) => {
       const input = document.querySelector('[data-field="newAttrName"]');
       const name = (input?.value || '').trim();
       if (!name) break;
-      const palette = ['#6c5ce7', '#00b894', '#e17055', '#0984e3', '#e1a100', '#8e9aaf', '#d63031', '#00cec9'];
       update((s) => ({
         ...s,
         attributes: [
           ...s.attributes,
-          { id: uid('attr'), name, color: palette[s.attributes.length % palette.length] },
+          {
+            id: uid('attr'),
+            name,
+            color: ATTR_PALETTE[s.attributes.length % ATTR_PALETTE.length],
+          },
         ],
       }));
       toast('属性已添加');
+      break;
+    }
+    case 'cycle-attr-color': {
+      const attr = state.attributes.find((a) => a.id === id);
+      if (!attr) break;
+      const i = ATTR_PALETTE.indexOf(attr.color);
+      const next = ATTR_PALETTE[(i + 1) % ATTR_PALETTE.length];
+      update((s2) => ({
+        ...s2,
+        attributes: s2.attributes.map((a) => (a.id === id ? { ...a, color: next } : a)),
+      }));
+      break;
+    }
+    case 'move-attr': {
+      const dir = Number(el.dataset.dir) || 0;
+      update((s2) => {
+        const list = [...s2.attributes];
+        const i = list.findIndex((a) => a.id === id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= list.length) return s2;
+        [list[i], list[j]] = [list[j], list[i]];
+        return { ...s2, attributes: list };
+      });
       break;
     }
     case 'del-attr':

@@ -17,6 +17,12 @@ export const WEEKDAYS = [
 export const STRENGTH = ['require', 'prefer', 'forbid'];
 export const STRENGTH_LABEL = { require: '必须', prefer: '偏好', forbid: '排除' };
 
+/** 属性可选颜色，改色时按这个顺序轮换 */
+export const ATTR_PALETTE = [
+  '#6c5ce7', '#00b894', '#e17055', '#0984e3',
+  '#e1a100', '#8e9aaf', '#d63031', '#00cec9',
+];
+
 export const DEFAULT_ATTRIBUTES = [
   { id: 'attr_deep', name: '深度工作', color: '#6c5ce7' },
   { id: 'attr_light', name: '浅层事务', color: '#00b894' },

@@ -891,3 +891,77 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 }
 .sync-status.has-msg { background: #f7f8ff; border-color: #dfe2f5; }
 .sync-msg { display: block; margin-top: 3px; color: var(--accent); font-weight: 600; }
+
+/* ---------------- 属性管理 ---------------- */
+
+.attr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.attr-list li { display: flex; }
+
+.attr-item {
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.swatch {
+  flex: 0 0 auto;
+  width: 18px; height: 18px; padding: 0;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--c);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 45%, #fff);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.swatch:hover { transform: scale(1.15); }
+
+.attr-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 7px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.attr-usage {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.attr-ops { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.attr-ops button {
+  border: 1px solid var(--line);
+  background: #fff;
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0;
+}
+.attr-ops button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.attr-ops button:disabled { opacity: 0.35; cursor: not-allowed; }
+.attr-ops .link { width: auto; height: 22px; padding: 0 4px; border: none; background: none; }
+
+.attr-empty {
+  font-size: 12px; color: var(--muted);
+  padding: 14px 0; justify-content: center;
+}
+
+.attr-manage {
+  font-size: 11px;
+  /* 这个 chip 没有 --c，需要显式配色，否则 color-mix 里 var(--c) 无效会掉样式 */
+  color: var(--muted);
+  border-color: var(--line);
+  background: var(--surface);
+}
+.attr-manage:hover { color: var(--accent); border-color: var(--accent); }
+
+@media (max-width: 720px) {
+  .attr-item { flex-wrap: wrap; }
+  .attr-usage { order: 4; width: 100%; padding-left: 25px; }
+}
