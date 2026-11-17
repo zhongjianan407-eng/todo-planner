@@ -1,0 +1,14 @@
+{
+  "name": "todo-planner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "任务 + 属性 + 时段 + 自动排程 的最小可行实现",
+  "scripts": {
+    "start": "python3 -m http.server 8770",
+    "test": "node test/scheduler.test.js && node test/edit.test.js && node test/focus.test.js && node test/writeback.test.js && node test/ui.smoke.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.1"
+  }
+}
