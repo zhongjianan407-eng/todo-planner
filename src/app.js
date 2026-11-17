@@ -86,7 +86,7 @@ const ui = {
   taskModal: null, // {mode:'create'|'edit', draft:{...}}
   slotModal: null,
   settingsOpen: false,
-  attrsOpen: false,
+  attrEditing: false,
   selectedAlloc: null,
   busy: false,
   toast: null,
@@ -302,19 +302,23 @@ function renderTaskPanel(state) {
                  style="--c:${a.color}" data-action="filter-attr" data-id="${a.id}">${esc(a.name)}</button>`,
           )
           .join('')}
-        <button class="chip clickable attr-manage" data-action="open-attrs"
-          title="管理属性">⚙ 属性</button>
+        <button class="chip clickable attr-manage ${ui.attrEditing ? 'on' : ''}"
+          data-action="toggle-attr-edit" title="编辑属性名称、颜色和顺序">
+          ${ui.attrEditing ? '✓ 完成' : '✎ 编辑属性'}
+        </button>
         <label class="tiny-check"><input type="checkbox" data-field="showDone" ${
           ui.showDone ? 'checked' : ''
         }> 显示已完成</label>
       </div>
+      ${ui.attrEditing ? renderAttrEditor(state) : ''}
     </div>
 
     <div class="task-list" data-scroll-key="tasks">${body || '<div class="empty">还没有任务，点右上角新建</div>'}</div>
     <div class="panel-foot">
-      <button class="link" data-action="open-attrs">管理属性</button>
+      <button class="link" data-action="toggle-attr-edit">编辑属性</button>
       <button class="link" data-action="open-settings">设置</button>
       <button class="link danger" data-action="reset">重置演示数据</button>
+      <span class="build-tag" title="页面版本，用来确认是否已更新">${esc(SITE.version)}</span>
     </div>
   </aside>`;
 }
@@ -729,61 +733,50 @@ function renderSettingsModal(state) {
   </div>`;
 }
 
-function renderAttrsModal(state) {
-  if (!ui.attrsOpen) return '';
-
+function renderAttrEditor(state) {
   const usage = (id) => {
     const tasks = state.tasks.filter((t) => (t.attrs || []).some((x) => x.attrId === id)).length;
-    const slots = state.slots.filter((s) => (s.attrs || []).includes(id)).length;
+    const slots = state.slots.filter((sl) => (sl.attrs || []).includes(id)).length;
     if (!tasks && !slots) return '未使用';
     return `${tasks} 任务 · ${slots} 时段`;
   };
 
   return `
-  <div class="overlay" data-action="close-modal">
-    <div class="modal modal-sm" data-stop="1">
-      <div class="modal-head">
-        <h3>属性管理</h3>
-        <button class="x" data-action="close-modal">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="hint">
-          属性同时挂在<strong>任务</strong>和<strong>时段</strong>上，排程靠它做匹配。
-          改名字、换颜色、调整顺序都会立刻生效。
-        </div>
+  <div class="attr-editor">
+    <div class="attr-editor-head">
+      <span>属性</span>
+      <span class="attr-editor-hint">改名 / 换色 / 排序，立即生效</span>
+    </div>
 
-        <ul class="attr-list">
-          ${
-            state.attributes.length === 0
-              ? '<li class="attr-empty">还没有属性，下面加一个</li>'
-              : state.attributes
-                  .map(
-                    (a, i) => `
-            <li class="attr-item">
-              <button class="swatch" style="--c:${a.color}" data-action="cycle-attr-color"
-                data-id="${a.id}" title="点击换颜色"></button>
-              <input class="input sm attr-name" data-attr-name="${a.id}"
-                value="${esc(a.name)}" maxlength="12" spellcheck="false">
-              <span class="attr-usage">${usage(a.id)}</span>
-              <span class="attr-ops">
-                <button data-action="move-attr" data-id="${a.id}" data-dir="-1"
-                  title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>
-                <button data-action="move-attr" data-id="${a.id}" data-dir="1"
-                  title="下移" ${i === state.attributes.length - 1 ? 'disabled' : ''}>↓</button>
-                <button class="link danger" data-action="del-attr" data-id="${a.id}">删</button>
-              </span>
-            </li>`,
-                  )
-                  .join('')
-          }
-        </ul>
+    <ul class="attr-list">
+      ${
+        state.attributes.length === 0
+          ? '<li class="attr-empty">还没有属性，下面加一个</li>'
+          : state.attributes
+              .map(
+                (a, i) => `
+        <li class="attr-item">
+          <button class="swatch" style="--c:${a.color}" data-action="cycle-attr-color"
+            data-id="${a.id}" title="点击换颜色"></button>
+          <input class="input sm attr-name" data-attr-name="${a.id}"
+            value="${esc(a.name)}" maxlength="12" spellcheck="false">
+          <span class="attr-usage">${usage(a.id)}</span>
+          <span class="attr-ops">
+            <button data-action="move-attr" data-id="${a.id}" data-dir="-1"
+              title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button data-action="move-attr" data-id="${a.id}" data-dir="1"
+              title="下移" ${i === state.attributes.length - 1 ? 'disabled' : ''}>↓</button>
+            <button data-action="del-attr" data-id="${a.id}" title="删除">×</button>
+          </span>
+        </li>`,
+              )
+              .join('')
+      }
+    </ul>
 
-        <div class="field-row">
-          <input class="input" data-field="newAttrName" placeholder="新属性名称，如「深度工作」" maxlength="12">
-          <button class="btn primary" data-action="add-attr">添加</button>
-        </div>
-        <div class="hint">删掉属性时，任务和时段上对应的标记会一起移除，但任务本身不会消失。</div>
-      </div>
+    <div class="attr-add">
+      <input class="input sm" data-field="newAttrName" placeholder="新属性名称，如「深度工作」" maxlength="12">
+      <button class="btn primary sm" data-action="add-attr">添加</button>
     </div>
   </div>`;
 }
@@ -876,7 +869,6 @@ function render() {
     ${renderTaskModal(state)}
     ${renderSlotModal(state)}
     ${renderSettingsModal(state)}
-    ${renderAttrsModal(state)}
     ${renderFocus(state)}
     ${ui.toast ? `<div class="toast ${ui.toast.kind}">${esc(ui.toast.msg)}</div>` : ''}
   </div>`;
@@ -1902,8 +1894,8 @@ document.addEventListener('click', async (e) => {
       ui.syncMsg = '已断开（云端数据仍在，可重新连接）';
       render();
       break;
-    case 'open-attrs':
-      ui.attrsOpen = true;
+    case 'toggle-attr-edit':
+      ui.attrEditing = !ui.attrEditing;
       render();
       break;
     case 'add-attr': {
@@ -2053,7 +2045,6 @@ document.addEventListener('click', async (e) => {
       ui.taskModal = null;
       ui.slotModal = null;
       ui.settingsOpen = false;
-      ui.attrsOpen = false;
       render();
       break;
     default:

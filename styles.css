@@ -960,8 +960,36 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   background: var(--surface);
 }
 .attr-manage:hover { color: var(--accent); border-color: var(--accent); }
+.attr-manage.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* 首页内联属性编辑器 */
+.attr-editor {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: grid;
+  gap: 6px;
+}
+.attr-editor-head {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 11.5px; font-weight: 600; color: var(--muted);
+}
+.attr-editor-hint { font-weight: 400; font-size: 10.5px; color: #a8b0bd; }
+.attr-add { display: flex; gap: 6px; }
+.attr-add .btn { flex: 0 0 auto; }
+.attr-add .input { flex: 1; min-width: 0; }
 
 @media (max-width: 720px) {
   .attr-item { flex-wrap: wrap; }
   .attr-usage { order: 4; width: 100%; padding-left: 25px; }
+}
+
+.build-tag {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: #b6bec9;
+  font-variant-numeric: tabular-nums;
+  align-self: center;
 }

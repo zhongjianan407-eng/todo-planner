@@ -727,11 +727,13 @@ console.log('\n[UI] 属性管理（首页可直接编辑）');
 
 let attrsBackup = null;
 
-check('首页有属性管理入口并打开', () => {
+check('首页直接展开属性编辑器（不需要开弹窗）', () => {
   const P = window.__PLANNER__;
   attrsBackup = P.getState().attributes.map((a) => ({ ...a }));
-  click($('[data-action="open-attrs"]'));
-  assert.ok($('.modal'), '弹窗未打开');
+  assert.equal($('.attr-editor'), null, '默认不该展开');
+  click($('[data-action="toggle-attr-edit"]'));
+  assert.ok($('.attr-editor'), '没有在首页展开编辑器');
+  assert.equal($('.modal'), null, '不应再弹窗');
   assert.ok($$('.attr-item').length >= 3, '属性行太少');
   assert.ok($('[data-field="newAttrName"]'), '缺少新增输入框');
 });
@@ -780,11 +782,12 @@ check('删除属性生效，且不会删掉任务本身', () => {
   assert.equal(P.getState().tasks.length, tasksBefore, '任务数量不该变');
 });
 
-check('还原现场', () => {
+check('还原现场并收起编辑器', () => {
   const P = window.__PLANNER__;
   P.update((s) => ({ ...s, attributes: attrsBackup }));
   assert.equal(P.getState().attributes.length, attrsBackup.length);
-  click($('.modal-head .x'));
+  click($('[data-action="toggle-attr-edit"]'));
+  assert.equal($('.attr-editor'), null, '收起后不该还展开');
 });
 
 check('整个过程没有抛未捕获错误', () => {
