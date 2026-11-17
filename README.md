@@ -296,7 +296,7 @@ git push -u origin main
 | 方式 | 操作 | 适合 |
 |---|---|---|
 | **A. 分支直发**（最省事） | Settings → Pages → Source 选 `Deploy from a branch` → Branch `main` + `/ (root)` → Save | 想三分钟搞定 |
-| **B. Actions**（推荐） | Settings → Pages → Source 选 `GitHub Actions`；仓库已带 `.github/workflows/pages.yml`，push 后自动发布，并会先跑一遍单元测试 | 想加质量门禁 |
+| **B. Actions**（推荐） | Settings → Pages → Source 选 `GitHub Actions`；仓库已带 `.github/workflows/deploy.yml`（`test` → `deploy` 两个作业），push 后先跑全部单元测试，过了才发布 | 想加质量门禁 |
 
 约 1 分钟后访问：
 
@@ -308,10 +308,14 @@ https://<你的用户名>.github.io/<仓库名>/
 
 - `.nojekyll` —— 关掉 Jekyll，避免它忽略某些以下划线开头的文件
 - `.gitignore` —— 排除 `node_modules/`、`.DS_Store`、日志
-- `.github/workflows/pages.yml` —— 测试通过后自动发布
+- `.github/workflows/deploy.yml` —— `test` 作业通过后才跑 `deploy` 作业
 - **全站相对路径** —— `./src/app.js`、`./styles.css`，所以挂在 `/<仓库名>/` 子路径下不会 404
 
 ### 几个坑
+
+- **Pages 的 Source 必须和 workflow 匹配**：用 `deploy.yml` 就必须把 Source 设成 `GitHub Actions`；
+  设成 `Deploy from a branch` 时这套 workflow 会因 `build_type` 不匹配而失败。
+- **改完代码记得看 Actions 有没有真的跑 deploy**。只看到 `CI` 绿的推送，可能只跑了测试、并没有发布。
 
 - **仓库名取 `<用户名>.github.io`** 时，站点挂在根路径 `https://<用户名>.github.io/`，其余仓库名都挂在子路径下。两种都支持。
 - 千万不要把资源改成 `/src/app.js` 这种**绝对路径**，子路径部署会直接白屏。
@@ -387,6 +391,7 @@ https://<你的用户名>.github.io/<仓库名>/
 |---|---|
 | 例外日 | 支持「仅某一天」的单次时段，但没有批量例外日（节假日整体停用） |
 | 估时校准 | 已能把实际时长回写到分片，但还没用历史数据反推校准 `estMin` |
+| 移动端布局验证 | `css.test.js` 只检查关键规则是否存在，真实排版仍需真机查看 |
 | 依赖跨任务 | 只支持同父步骤的顺序依赖，没有任务间的任意 DAG |
 | 算法最优性 | 纯贪心，不做回溯/局部搜索；规模大了质量会下降 |
 | 同步与多端 | 只有 localStorage，没有账号和后端 |

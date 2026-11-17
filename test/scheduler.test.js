@@ -701,6 +701,46 @@ test('跨度设为 0 或非法值时回落到 7 天', () => {
   assert.equal(schedule({ state: st, weekStart: BASE, now: NOW }).stats.days, 7);
 });
 
+/* ============ 15. 跨度内无可用时段 ============ */
+
+console.log('\n[15] 跨度内没有可用时段时的原因');
+
+test('所有时段都在过去时，原因报 empty_horizon 而不是「没有属性匹配的时段」', () => {
+  const task = makeTask({
+    title: '任意任务',
+    estMin: 60,
+    attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+  });
+  const st = mkState({ tasks: [task], slots: [deepSlot()] });
+  st.settings.horizonDays = 7;
+  // now 放到这一周之后：所有实例都被 "end > now" 过滤掉
+  const future = addDays(BASE, 30);
+  const r = schedule({ state: st, weekStart: BASE, now: future });
+
+  assert.equal(r.created.length, 0);
+  assert.equal(r.unscheduled.length, 1);
+  assert.equal(r.unscheduled[0].reason, 'empty_horizon');
+  assert.equal(r.stats.capacityMin, 0, '容量应为 0');
+});
+
+test('完全没配时段时也报 empty_horizon', () => {
+  const task = makeTask({ title: '任务', estMin: 60, attrs: [{ attrId: 'attr_deep', strength: 'require' }] });
+  const st = mkState({ tasks: [task], slots: [] });
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.equal(r.unscheduled[0].reason, 'empty_horizon');
+});
+
+test('有可用时段但属性不匹配时，仍然报 no_matching_slot', () => {
+  const task = makeTask({
+    title: '要学习时段',
+    estMin: 60,
+    attrs: [{ attrId: 'attr_study', strength: 'require' }],
+  });
+  const st = mkState({ tasks: [task], slots: [deepSlot()] });
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.equal(r.unscheduled[0].reason, 'no_matching_slot');
+});
+
 /* ============ 汇总 ============ */
 
 console.log(`\n${'─'.repeat(48)}`);

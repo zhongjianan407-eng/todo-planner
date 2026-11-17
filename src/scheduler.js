@@ -306,7 +306,9 @@ export function schedule({ state, weekStart = new Date(), now = new Date(), dryR
 
       if (remaining > 0) {
         let reason = 'no_capacity';
-        if (!sawMatching) reason = sawAttrOnly ? 'constraint_blocked' : 'no_matching_slot';
+        // 整个跨度里没有任何"还没过去"的时段——这时说"没有属性匹配的时段"是误导
+        if (instances.length === 0) reason = 'empty_horizon';
+        else if (!sawMatching) reason = sawAttrOnly ? 'constraint_blocked' : 'no_matching_slot';
         else if (placed > 0) reason = 'partial';
         unscheduledMap.set(unit.id, {
           taskId: unit.id,

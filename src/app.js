@@ -433,6 +433,7 @@ function renderUnscheduled(state, result) {
   if (!result) return '<div class="unsched empty-hint">点「自动排程」后，这里会列出排不进去的任务和原因。</div>';
   const { unscheduled, stats } = result;
   const reasonTxt = {
+    empty_horizon: '排程范围内没有可用时段（都过去了或没配置）',
     no_matching_slot: '没有属性匹配的时段',
     constraint_blocked: '被任务的时段约束挡住了',
     no_capacity: '匹配时段容量已满',
