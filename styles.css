@@ -91,12 +91,17 @@ button { font-family: inherit; cursor: pointer; }
 .layout {
   display: grid;
   grid-template-columns: 400px minmax(0, 1fr);
+  /* 网格子项默认 min-width:auto，会被内部 7 列日程的 min-content 撑破 */
+  grid-auto-rows: min-content;
   gap: 16px;
   padding: 16px 22px 28px;
   align-items: start;
 }
 
+.layout > * { min-width: 0; }
+
 .panel {
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -126,7 +131,7 @@ button { font-family: inherit; cursor: pointer; }
 .tiny-check { font-size: 11.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
 
 .input {
-  width: 100%; padding: 7px 10px; border: 1px solid var(--line);
+  width: 100%; min-width: 0; max-width: 100%; padding: 7px 10px; border: 1px solid var(--line);
   border-radius: 8px; background: var(--surface); font-size: 13px;
   font-family: inherit; color: var(--text);
 }
@@ -430,15 +435,22 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 
 .overlay {
   position: fixed; inset: 0; background: rgba(17, 24, 39, 0.42);
-  display: grid; place-items: center; z-index: 60; padding: 20px;
+  display: grid;
+  /* 关键：不写这一行，隐式列会按弹窗内容宽度撑开，
+     弹窗的 max-width:100% 就变成了「相对它自己」，等于没限制 */
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  z-index: 60; padding: 20px;
   backdrop-filter: blur(2px);
+  overflow-y: auto;
 }
 .modal {
-  background: var(--surface); border-radius: 14px; width: 520px; max-width: 100%;
+  background: var(--surface); border-radius: 14px;
+  width: min(520px, 100%); max-width: 100%;
   max-height: 88vh; display: flex; flex-direction: column;
   box-shadow: 0 20px 60px rgba(16, 24, 40, 0.25);
 }
-.modal-sm { width: 420px; }
+.modal-sm { width: min(420px, 100%); }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px; border-bottom: 1px solid var(--line);
@@ -455,6 +467,8 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 .field { display: grid; gap: 5px; }
 .field > span { font-size: 12px; color: var(--muted); }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 表单控件默认有固有最小宽度，不加这个两列布局会把弹窗撑出屏幕 */
+.field-row > *, .modal-body > *, .pair > * { min-width: 0; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .hint {
   font-size: 11.5px; color: var(--muted); background: var(--surface-2);
@@ -483,7 +497,7 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 }
 
 @media (max-width: 1080px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
   .panel-tasks { position: static; max-height: 50vh; }
 }
 
@@ -719,3 +733,64 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   text-decoration: none; color: var(--muted);
 }
 .repo-link:hover { color: var(--text); }
+
+/* ---------------- 手机端（≤720px） ---------------- */
+
+@media (max-width: 720px) {
+  /* 顶栏：允许换行，统计信息独占一行，避免把按钮挤出屏幕 */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 14px;
+  }
+  .brand { order: 1; }
+  .topactions { order: 2; margin-left: auto; }
+  .topstats {
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+  }
+
+  .layout { padding: 10px; gap: 12px; }
+
+  /* 任务面板不再吸顶，限制高度后可滚动 */
+  .panel-tasks { position: static; max-height: none; }
+  .task-list { max-height: 46vh; }
+
+  /* 篇幅有限的提示文字在小屏上隐藏 */
+  .cal-hint, .week-hint { display: none; }
+
+  /* 周视图固定列宽，横向滚动（日历的标准做法） */
+  .week-grid {
+    grid-template-columns: repeat(7, 140px);
+    scroll-snap-type: x proximity;
+  }
+  .day { scroll-snap-align: start; }
+
+  .cal-toolbar { flex-wrap: wrap; gap: 6px; }
+  .week-nav { gap: 6px; }
+
+  /* 弹窗铺满，表单改为单列 */
+  .overlay { padding: 10px; }
+  .modal, .modal-sm { width: 100%; max-height: 92vh; }
+  .modal-body { padding: 14px; }
+  .field-row { grid-template-columns: 1fr; }
+  .pair { grid-template-columns: 1fr 1fr; }
+
+  /* 分片工具栏、排程结果在小屏上换行，不要横向溢出 */
+  .alloc-toolbar { flex-wrap: wrap; gap: 6px; }
+  .unsched-head { flex-wrap: wrap; gap: 2px; }
+  .unsched-list li { flex-wrap: wrap; gap: 4px 8px; }
+  .unsched-list .u-reason { margin-left: 0; }
+
+  /* 日视图左侧刻度收窄 */
+  .dv-canvas { margin: 10px 8px 20px 50px; }
+  .dv-hour-label, .dv-now span { left: -46px; }
+  .dv-scroll { max-height: calc(100vh - 210px); }
+
+  .toast { left: 12px; right: 12px; transform: none; }
+  .focus-pill { right: 12px; bottom: 12px; }
+  .focus-controls { flex-wrap: wrap; }
+}

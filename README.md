@@ -32,6 +32,7 @@ node test/scheduler.test.js    # 排程引擎 + 约束 + 容量 + 跨周 47 个�
 node test/edit.test.js         # 手动移动/拉伸 + 指针换算 21 个用例
 node test/focus.test.js        # 专注计时逻辑 14 个用例
 node test/writeback.test.js    # 时长回写 / 夹紧 / 还原 14 个用例
+node test/css.test.js          # 手机端布局契约 12 个用例（静态检查）
 node test/ui.smoke.test.js     # jsdom 真实渲染 + 模拟点击 51 个用例（需 pnpm add -D jsdom）
 
 # 或一次跑完
@@ -359,6 +360,24 @@ https://<你的用户名>.github.io/<仓库名>/
 | 7 天 | 7 | 1 | 11/20 |
 | 14 天 | 8 | 1 | 11/24 |
 | 30 天 | 9 | 0 | 12/01 |
+
+
+---
+
+## 手机端适配（v0.5）
+
+在 iPhone 上实测修掉了三个叠加的横向溢出问题：
+
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| 整页比屏幕宽、内容不居中 | `@media(max-width:1080px)` 里写的是 `grid-template-columns: 1fr`，等于 `minmax(auto,1fr)`，被 7 列日程（826px）的 min-content 撑破 | 改成 `minmax(0, 1fr)`，并给 `.layout > *`、`.panel` 加 `min-width: 0` |
+| 弹窗右侧按钮点不到 | `.overlay` 是 grid 但没写列宽，隐式列按弹窗内容撑开，弹窗的 `max-width:100%` 变成"相对自己"，等于没限制 | `.overlay` 显式 `grid-template-columns: minmax(0, 1fr)`；弹窗宽度改 `min(520px, 100%)` |
+| 「添加」按钮被截断 | `.field-row` 两列里的 `<input>` 有固有最小宽度，把弹窗撑出屏幕 | 给 `.field-row > *` 和 `.input` 加 `min-width: 0`；小屏下表单改单列 |
+
+另外新增 `@media (max-width: 720px)`：顶栏换行、任务面板不再吸顶、周视图固定列宽横向滚动、弹窗铺满、提示文字隐藏。
+
+配套加了 `test/css.test.js`（12 条静态契约检查）。jsdom 没有排版引擎，测不出真实宽度，
+所以这里退一步把这些关键规则钉死，防止以后被无意改回去——它验的是"修复还在"，不是"渲染正确"。
 
 ---
 

@@ -24,3 +24,4 @@ jobs:
           node test/edit.test.js
           node test/focus.test.js
           node test/writeback.test.js
+          node test/css.test.js
