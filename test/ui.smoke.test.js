@@ -560,6 +560,69 @@ check('关闭回写开关后只记录、不修改日程', () => {
   P.getState().settings.writeBack = true;
 });
 
+console.log('\n[UI] 跨周排程');
+
+check('顶栏按钮显示当前排程跨度，设置里能改', () => {
+  click($('[data-action="open-settings"]'));
+  const sel = document.querySelector('[data-setting="horizonDays"]');
+  assert.ok(sel, '设置里没有跨度选项');
+  assert.ok(sel.options.length >= 4, '跨度可选项太少');
+  click($('.modal-head .x'));
+  assert.match($('[data-action="run-schedule"]').textContent, /排程 \d+ 天/, '按钮没显示跨度');
+});
+
+check('跨度变大，可排容量随之增加', () => {
+  const P = window.__PLANNER__;
+  const base = P.getState();
+  const r7 = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 7 } }, weekStart: new Date() });
+  const r30 = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 30 } }, weekStart: new Date() });
+  assert.equal(r7.stats.days, 7);
+  assert.equal(r30.stats.days, 30);
+  assert.ok(r30.stats.capacityMin > r7.stats.capacityMin, '30 天的容量应大于 7 天');
+});
+
+check('所有分片都落在各自跨度之内', () => {
+  const P = window.__PLANNER__;
+  const base = P.getState();
+  for (const days of [7, 30]) {
+    const r = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: days } }, weekStart: new Date() });
+    for (const a of r.created) {
+      assert.ok(a.date >= r.stats.horizonStart && a.date <= r.stats.horizonEnd,
+        `分片 ${a.date} 超出了 ${r.stats.horizonStart}~${r.stats.horizonEnd}`);
+    }
+  }
+});
+
+check('10 小时任务：短期排不满，拉长跨度后排满', () => {
+  const P = window.__PLANNER__;
+  const st = P.getState();
+  const big = {
+    id: 'big_task', title: '大活', status: 'todo', priority: 2, dueAt: null, estMin: 600,
+    attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+    constraints: { allowSlotIds: [], denySlotIds: [], weekdays: [] },
+    parentId: null, order: 0, minChunk: 60, maxChunk: 120,
+    source: 'manual', createdAt: new Date().toISOString(), completedAt: null,
+  };
+  const slots = [{
+    id: 's_mon', kind: 'weekly', weekday: 1, date: null,
+    start: '09:00', end: '11:00', name: '深度', attrs: ['attr_deep'],
+    capacityMin: null, maxTasks: null,
+  }];
+  const base = { ...st, tasks: [big], slots, allocations: [], settings: { ...st.settings } };
+  const sum = (r) =>
+    r.created.reduce((x, a) => x + (new Date(a.end) - new Date(a.start)) / 60000, 0);
+
+  // 注意：起点是「本周一」，今天若已过周一，第一个周一就被过滤掉了，
+  // 所以用一个足够长的跨度保证至少还剩 5 个周一（5 × 120 = 600）
+  const r7 = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 7 } }, weekStart: new Date() });
+  const r60 = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 60 } }, weekStart: new Date() });
+
+  assert.ok(sum(r7) < 600, `7 天只排了 ${sum(r7)} 分钟，应该少于 600`);
+  assert.equal(sum(r60), 600, `60 天应排满 600 分钟，实际 ${sum(r60)}`);
+  assert.ok(r7.unscheduled.length > 0, '短期跨度下应有排不进的任务');
+  assert.equal(r60.unscheduled.length, 0, '拉长跨度后应全部排入');
+});
+
 check('整个过程没有抛未捕获错误', () => {
   assert.deepEqual(errors, []);
 });

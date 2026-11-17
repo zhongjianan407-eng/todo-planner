@@ -24,6 +24,7 @@ import {
   isoWeekday,
   makeConstraints,
   minutesBetween,
+  startOfWeek,
 } from './model.js';
 import { childrenOf } from './sort.js';
 
@@ -199,13 +200,18 @@ function scheduledMinutesOf(taskId, allocations) {
  * @param {boolean}[opts.dryRun]     只计算不落库
  * @returns {{allocations, created, kept, removedIds, unscheduled, warnings, stats}}
  */
-export function schedule({ state, weekStart, now = new Date(), dryRun = false }) {
+export function schedule({ state, weekStart = new Date(), now = new Date(), dryRun = false }) {
   const { tasks, slots } = state;
-  const days = state.settings?.horizonDays ?? 7;
-  const instancesAll = buildSlotInstances(slots, weekStart, days);
+  // 排程跨度：允许跨周。1~180 天，防止误设成几年导致卡死
+  const days = Math.max(1, Math.min(180, Number(state.settings?.horizonDays) || 7));
+  const anchor = startOfWeek(weekStart);
+  const instancesAll = buildSlotInstances(slots, anchor, days);
   const instances = instancesAll.filter((i) => i.end > now);
 
-  const rangeKeys = new Set(instancesAll.map((i) => i.dateKey));
+  // 清理范围按「日期」算，而不是按「有没有时段」算：
+  // 否则跨度里没排时段的那些天，旧分片会残留下来
+  const rangeKeys = new Set();
+  for (let i = 0; i < days; i += 1) rangeKeys.add(dateKey(addDays(anchor, i)));
   const inRange = (a) => rangeKeys.has(a.date);
 
   const kept = (state.allocations || []).filter((a) => !inRange(a) || a.locked);
@@ -324,7 +330,12 @@ export function schedule({ state, weekStart, now = new Date(), dryRun = false })
   }
 
   const unscheduled = [...unscheduledMap.values()];
+  const lastDate = created.reduce((max, a) => (a.date > max ? a.date : max), '');
   const stats = {
+    days,
+    horizonStart: dateKey(anchor),
+    horizonEnd: dateKey(addDays(anchor, days - 1)),
+    lastPlannedDate: lastDate || null,
     totalUnits: groups.reduce((sum, g) => sum + g.units.length, 0),
     placedUnits: groups.reduce((sum, g) => sum + g.units.length, 0) - unscheduled.length,
     allocCount: created.length,

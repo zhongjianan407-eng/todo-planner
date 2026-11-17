@@ -25,7 +25,7 @@ function load() {
       allocations: parsed.allocations ?? [],
       focusSessions: parsed.focusSessions ?? [],
       settings: {
-        horizonDays: 7,
+        horizonDays: 14,
         maxSteps: 5,
         writeBack: true,
         llm: { baseUrl: '', apiKey: '', model: '' },

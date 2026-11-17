@@ -293,7 +293,7 @@ export function seedState() {
     allocations: [],
     focusSessions: [],
     settings: {
-      horizonDays: 7,
+      horizonDays: 14,
       maxSteps: 5,
       writeBack: true, // 专注结束后是否回写日程
       llm: { baseUrl: '', apiKey: '', model: '' },

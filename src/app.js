@@ -19,6 +19,7 @@ import {
   makeTask,
   minutesBetween,
   minutesToHM,
+  parseDateKey,
   slotLabel,
   startOfWeek,
   uid,
@@ -93,6 +94,13 @@ const esc = (s) =>
     .replace(/"/g, '&quot;');
 
 const pad = (n) => String(n).padStart(2, '0');
+
+/** 'YYYY-MM-DD' -> 'M/D'（本地时区，别用 new Date(key) 会按 UTC 解析） */
+function fmtDateKey(key) {
+  if (!key) return '';
+  const d = parseDateKey(key);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 /** 秒表图标：内联 SVG 而不是 emoji，跨平台尺寸和颜色都可控 */
 function focusIcon(px = 14) {
@@ -434,7 +442,13 @@ function renderUnscheduled(state, result) {
   <div class="unsched">
     <div class="unsched-head">
       <span>排程结果</span>
-      <span class="stat">容量 ${fmtDuration(stats.capacityMin)} · 已填 ${fmtDuration(stats.filledMin)} · 分片 ${stats.allocCount}</span>
+      <span class="stat">
+        ${fmtDateKey(stats.horizonStart)}–${fmtDateKey(stats.horizonEnd)}（${stats.days} 天）
+        · 容量 ${fmtDuration(stats.capacityMin)}
+        · 已填 ${fmtDuration(stats.filledMin)}
+        · 分片 ${stats.allocCount}
+        ${stats.lastPlannedDate ? `· 已排到 ${fmtDateKey(stats.lastPlannedDate)}` : ''}
+      </span>
     </div>
     ${
       unscheduled.length === 0
@@ -655,6 +669,19 @@ function renderSettingsModal(state) {
       <div class="modal-head"><h3>设置</h3><button class="x" data-action="close-modal">✕</button></div>
       <div class="modal-body">
         <label class="field">
+          <span>自动排程跨度</span>
+          <select class="input" data-setting="horizonDays">
+            ${[7, 14, 21, 30, 60]
+              .map(
+                (d) =>
+                  `<option value="${d}" ${Number(s.horizonDays) === d ? 'selected' : ''}>${
+                    d === 7 ? '本周 7 天（不跨周）' : `未来 ${d} 天（跨 ${Math.ceil(d / 7)} 周）`
+                  }</option>`,
+              )
+              .join('')}
+          </select>
+        </label>
+        <label class="field">
           <span>自动拆分最多几步</span>
           <input class="input" type="number" min="2" max="8" data-setting="maxSteps" value="${s.maxSteps}">
         </label>
@@ -758,8 +785,9 @@ function render() {
             ? `<a class="btn ghost sm repo-link" href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a>`
             : ''
         }
-        <button class="btn primary" data-action="run-schedule" ${ui.busy ? 'disabled' : ''}>
-          ${ui.busy ? '排程中…' : '⚡ 自动排程'}
+        <button class="btn primary" data-action="run-schedule" ${ui.busy ? 'disabled' : ''}
+          title="从本周开始，按设置的跨度往后排">
+          ${ui.busy ? '排程中…' : `⚡ 排程 ${state.settings.horizonDays ?? 14} 天`}
         </button>
       </div>
     </header>
@@ -941,13 +969,16 @@ async function runDecompose(taskId) {
 
 function runSchedule() {
   const state = getState();
-  const result = schedule({ state, weekStart: ui.weekStart });
+  // 始终从「今天所在周」开始，按设置的跨度往后铺，不受当前浏览到哪一周影响
+  const result = schedule({ state, weekStart: new Date() });
   lastResult = result;
   update((s) => ({ ...s, allocations: result.allocations }));
+
+  const span = `${fmtDateKey(result.stats.horizonStart)}–${fmtDateKey(result.stats.horizonEnd)}`;
   toast(
     result.unscheduled.length
-      ? `已排 ${result.created.length} 个分片，${result.unscheduled.length} 个任务排不进`
-      : `已排 ${result.created.length} 个分片，全部任务排入 ✓`,
+      ? `${span} 内已排 ${result.created.length} 个分片，${result.unscheduled.length} 个任务排不进`
+      : `${span} 内已排 ${result.created.length} 个分片，全部排入 ✓`,
     result.unscheduled.length ? 'warn' : 'ok',
   );
 }
@@ -1376,7 +1407,7 @@ document.addEventListener('change', (e) => {
   const setting = e.target.dataset.setting;
   if (setting) {
     let v = e.target.value;
-    if (setting === 'maxSteps') v = Number(v);
+    if (setting === 'maxSteps' || setting === 'horizonDays') v = Number(v);
     if (setting === 'writeBack') v = e.target.checked;
     update((s) => {
       const next = { ...s, settings: { ...s.settings } };

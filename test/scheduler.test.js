@@ -595,6 +595,112 @@ test('once 日期不在本周时不出现', () => {
   assert.equal(buildSlotInstances(slots, BASE, 7).length, 0);
 });
 
+/* ============ 14. 跨周排程 ============ */
+
+console.log('\n[14] 跨周排程');
+
+function mondaySlots() {
+  return [makeSlot({ id: 's_mon', weekday: 1, start: '09:00', end: '11:00', name: '深度', attrs: ['attr_deep'] })];
+}
+
+function bigTask() {
+  return makeTask({
+    title: '十小时的大活',
+    estMin: 600,
+    minChunk: 60,
+    maxChunk: 120,
+    attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+  });
+}
+
+test('跨度 7 天：10 小时任务只排得下 2 小时', () => {
+  const st = mkState({ tasks: [bigTask()], slots: mondaySlots() });
+  st.settings.horizonDays = 7;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+
+  const total = r.created.reduce((s, a) => s + dur(a), 0);
+  assert.equal(total, 120, '7 天里只有 1 个周一');
+  assert.equal(r.unscheduled.length, 1);
+  assert.equal(r.unscheduled[0].reason, 'partial');
+});
+
+test('跨度 35 天：同一个任务摊到 5 个周一，跨 4 周', () => {
+  const st = mkState({ tasks: [bigTask()], slots: mondaySlots() });
+  st.settings.horizonDays = 35;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+
+  const total = r.created.reduce((s, a) => s + dur(a), 0);
+  assert.equal(total, 600, '35 天里有 5 个周一，刚好排满');
+  assert.equal(r.unscheduled.length, 0);
+
+  const dates = [...new Set(r.created.map((a) => a.date))].sort();
+  assert.equal(dates.length, 5, '应分布在 5 个不同的日期');
+  assert.equal(dates[0], MON, '第一段在本周一');
+  assert.equal(dates[4], dateKey(addDays(BASE, 28)), '最后一段在第 5 个周一');
+});
+
+test('长任务每段都不超过 maxChunk', () => {
+  const st = mkState({ tasks: [bigTask()], slots: mondaySlots() });
+  st.settings.horizonDays = 35;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  for (const a of r.created) {
+    assert.ok(dur(a) <= 120, `单段 ${dur(a)} 分钟超过了 maxChunk`);
+  }
+});
+
+test('统计里带上跨度边界', () => {
+  const st = mkState({ tasks: [], slots: mondaySlots() });
+  st.settings.horizonDays = 21;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.equal(r.stats.days, 21);
+  assert.equal(r.stats.horizonStart, MON);
+  assert.equal(r.stats.horizonEnd, dateKey(addDays(BASE, 20)));
+});
+
+test('跨度之外的分片原样保留，不被重排清掉', () => {
+  const outsideDate = dateKey(addDays(BASE, 40));
+  const outside = {
+    id: 'keep_me',
+    taskId: 'someone',
+    date: outsideDate,
+    slotId: 's_mon',
+    start: atDateTime(outsideDate, '09:00').toISOString(),
+    end: atDateTime(outsideDate, '10:00').toISOString(),
+    locked: false,
+    source: 'auto',
+  };
+  const st = mkState({ tasks: [], slots: mondaySlots(), allocations: [outside] });
+  st.settings.horizonDays = 7;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.ok(r.allocations.some((a) => a.id === 'keep_me'), '跨度外的分片应保留');
+});
+
+test('跨度内没有时段的日子，残留分片也会被清掉', () => {
+  const wed = dateKey(addDays(BASE, 2)); // 周三，测试里没有任何时段
+  const orphan = {
+    id: 'orphan',
+    taskId: 'x',
+    date: wed,
+    slotId: 'gone',
+    start: atDateTime(wed, '09:00').toISOString(),
+    end: atDateTime(wed, '10:00').toISOString(),
+    locked: false,
+    source: 'auto',
+  };
+  const st = mkState({ tasks: [], slots: mondaySlots(), allocations: [orphan] });
+  st.settings.horizonDays = 7;
+  const r = schedule({ state: st, weekStart: BASE, now: NOW });
+  assert.ok(!r.allocations.some((a) => a.id === 'orphan'), '跨度内的残留应被清理');
+});
+
+test('跨度设为 0 或非法值时回落到 7 天', () => {
+  const st = mkState({ tasks: [], slots: mondaySlots() });
+  st.settings.horizonDays = 0;
+  assert.equal(schedule({ state: st, weekStart: BASE, now: NOW }).stats.days, 7);
+  st.settings.horizonDays = 'abc';
+  assert.equal(schedule({ state: st, weekStart: BASE, now: NOW }).stats.days, 7);
+});
+
 /* ============ 汇总 ============ */
 
 console.log(`\n${'─'.repeat(48)}`);
