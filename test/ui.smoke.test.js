@@ -143,6 +143,68 @@ check('打开设置弹窗', () => {
   click($('.modal-head .x'));
 });
 
+console.log('\n[UI] 设备同步设置');
+
+check('设置里有同步区块', () => {
+  click($('[data-action="open-settings"]'));
+  assert.ok($('.sync-block'), '设置里没有同步区块');
+  assert.ok(document.querySelector('[data-sync="token"]'), '缺少 Token 输入框');
+  assert.ok($('[data-action="sync-push"]'), '缺少上传按钮');
+  assert.ok($('[data-action="sync-pull"]'), '缺少恢复按钮');
+  assert.match($('.sync-status').textContent, /未连接/);
+});
+
+await (async () => {
+  const realFetch = globalThis.fetch;
+
+  // ① 模拟 GitHub 返回 401
+  globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
+  try {
+    const input = document.querySelector('[data-sync="token"]');
+    input.value = 'github_pat_invalid';
+    click($('[data-action="sync-push"]'));
+    await tick(80);
+
+    check('Token 无效时给出可读提示，而不是静默失败', () => {
+      assert.match($('.sync-status').textContent, /Token 无效/, '没有显示错误原因');
+    });
+
+    check('Token 只写进本机凭证，不进入会被同步的 state', () => {
+      const raw = window.localStorage.getItem('todo-planner-state-v1') ?? '';
+      assert.ok(!raw.includes('github_pat_invalid'), 'Token 混进了 state 里');
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  // ② 模拟首次上传成功，GitHub 返回新建的 gist
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ id: 'gist_test123', updated_at: new Date().toISOString(), files: {} }),
+  });
+  try {
+    document.querySelector('[data-sync="token"]').value = 'github_pat_ok';
+    click($('[data-action="sync-push"]'));
+    await tick(80);
+
+    check('首次上传后变成已连接，并出现断开按钮', () => {
+      assert.match($('.sync-status').textContent, /已连接/);
+      assert.ok($('[data-action="sync-forget"]'), '缺少断开按钮');
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  // ③ 断开
+  click($('[data-action="sync-forget"]'));
+  check('断开后恢复未连接', () => {
+    assert.match($('.sync-status').textContent, /未连接/);
+    assert.equal($('[data-action="sync-forget"]'), null, '断开后不该还有断开按钮');
+  });
+
+  click($('.modal-head .x'));
+})();
+
 check('点击分片可选中并出现工具栏', () => {
   const alloc = $('.alloc');
   assert.ok(alloc, '没有可点的分片');

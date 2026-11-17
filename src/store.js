@@ -24,6 +24,7 @@ function load() {
       slots: parsed.slots ?? [],
       allocations: parsed.allocations ?? [],
       focusSessions: parsed.focusSessions ?? [],
+      updatedAt: parsed.updatedAt ?? null,
       settings: {
         horizonDays: 14,
         maxSteps: 5,
@@ -59,7 +60,7 @@ export function getState() {
 export function update(updater) {
   const prev = getState();
   const next = updater(prev) ?? prev;
-  state = next === prev ? { ...prev } : next;
+  state = { ...(next === prev ? prev : next), updatedAt: new Date().toISOString() };
   persist();
   emit();
   return state;

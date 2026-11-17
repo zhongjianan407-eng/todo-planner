@@ -32,8 +32,9 @@ node test/scheduler.test.js    # 排程引擎 + 约束 + 容量 + 跨周 53 个�
 node test/edit.test.js         # 手动移动/拉伸 + 指针换算 21 个用例
 node test/focus.test.js        # 专注计时逻辑 14 个用例
 node test/writeback.test.js    # 时长回写 / 夹紧 / 还原 14 个用例
+node test/sync.test.js         # 同步数据整形 / 合并 / 凭证 10 个用例
 node test/css.test.js          # 手机端布局契约 12 个用例（静态检查）
-node test/ui.smoke.test.js     # jsdom 真实渲染 + 模拟点击 56 个用例（需 pnpm add -D jsdom）
+node test/ui.smoke.test.js     # jsdom 真实渲染 + 模拟点击 61 个用例（需 pnpm add -D jsdom）
 
 # 或一次跑完
 npm test
@@ -56,6 +57,7 @@ todo-planner/
 │   ├── edit.js           手动移动 / 拉伸 / 新建分配（纯函数，可单测）
 │   ├── focus.js          专注计时逻辑（纯函数，可单测）
 │   ├── writeback.js      专注时长回写日程（纯函数，可单测）
+│   ├── sync.js           GitHub Gist 设备同步
 │   └── app.js            渲染 + 事件委托 + 指针拖拽
 └── test/
     ├── scheduler.test.js
@@ -412,6 +414,59 @@ https://<你的用户名>.github.io/<仓库名>/
 配套加了 `test/css.test.js`（12 条静态契约检查）。jsdom 没有排版引擎，测不出真实宽度，
 所以这里退一步把这些关键规则钉死，防止以后被无意改回去——它验的是"修复还在"，不是"渲染正确"。
 
+
+---
+
+## 设备间同步（v0.7）
+
+数据默认存在浏览器 localStorage 里，**换个设备/浏览器就看不到**。现在加了基于 **GitHub Gist** 的同步。
+
+选择 Gist 而不是 Supabase/Firebase 的原因：实测你这条网络 `api.github.com` 稳定可达，
+而 Firebase / Google APIs 直接超时；同时你本来就有 GitHub 账号，等于「第三方登录」现成，不用再注册服务。
+
+### 一次性准备：生成 Token
+
+1. 打开 https://github.com/settings/personal-access-tokens/new
+2. **Token name** 随便填，比如 `planner-sync`
+3. **Expiration** 按需选（到期后重新生成一个粘贴进来即可）
+4. **Repository access** 选 `Public repositories`（同步用不到仓库权限）
+5. **Account permissions** → 找到 **Gists** → 选 **Read and write**
+6. 生成，复制 `github_pat_...`（只显示一次）
+
+### 使用
+
+**设备 A（已有数据）**：设置 → 设备同步 → 粘贴 Token → **上传到云端**
+首次会自动创建一个**私有 Gist**，文件是 `todo-planner.json`。
+
+**设备 B**：打开同一个网址 → 设置 → 粘贴**同一个 Token** → **从云端恢复**
+
+之后两边都可以随时上传/恢复。
+
+### 安全边界
+
+| 事项 | 处理 |
+|---|---|
+| Token 存哪 | 只存本机 `localStorage` 的独立键 `todo-planner-sync-v1`，**不进 App state** |
+| 会不会被同步上去 | 不会。上传前会剥掉 token 和 `settings.llm.apiKey` |
+| 拉取后 LLM Key 会丢吗 | 不会。合并时用本机的值回填 |
+| Token 权限 | 只勾 `Gists`，最坏情况也只能读写你自己的 Gist |
+| 公共设备 | 用完点「断开同步」，会清掉本机凭证 |
+
+### 冲突处理
+
+不自动覆盖。上传前会先读云端的时间戳：
+
+- 云端比本机新 → **拒绝上传**，提示「请先从云端恢复」
+- 本机比云端新 → 正常上传
+
+这样不会出现「A 设备刚记完，B 设备一上传就把它冲掉」。
+
+### 目前的限制
+
+- **手动触发**，不是实时双向同步（没有轮询/实时通道）
+- 拉取是**整份覆盖**本地，不是逐条合并。所以恢复前请确认云端那份是你要的
+- 只同步数据，不同步界面状态（当前看的是哪一周、选中了谁）
+
 ---
 
 ## 已知边界（初版刻意没做）
@@ -424,7 +479,7 @@ https://<你的用户名>.github.io/<仓库名>/
 | 跨度上限 | 自动延伸最多到 180 天，超出部分的任务仍会报「排不进」 |
 | 依赖跨任务 | 只支持同父步骤的顺序依赖，没有任务间的任意 DAG |
 | 算法最优性 | 纯贪心，不做回溯/局部搜索；规模大了质量会下降 |
-| 同步与多端 | 只有 localStorage，没有账号和后端 |
+| 实时同步 | 已支持 Gist 手动同步，但没有实时双向推送 |
 | LLM 拆分稳定性 | 无 API Key 时用规则模板，拆分质量受限于模板覆盖度 |
 
 ## 后续可加的三件事（按性价比排序）

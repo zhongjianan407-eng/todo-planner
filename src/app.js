@@ -49,6 +49,14 @@ import { decomposeTask } from './decompose.js';
 import { applyFocusWriteBack, restorePlanned } from './writeback.js';
 import { REPO_URL, SITE, SITE_TITLE } from './config.js';
 import {
+  clearSyncConfig,
+  loadSyncConfig,
+  mergeRemote,
+  pullState,
+  pushState,
+  saveSyncConfig,
+} from './sync.js';
+import {
   createSession,
   finishSession,
   fmtClock,
@@ -85,6 +93,8 @@ const ui = {
   dayDate: new Date(),
   monthDate: new Date(),
   focusOpen: false,
+  syncMsg: '',
+  syncBusy: false,
 };
 
 const esc = (s) =>
@@ -705,6 +715,8 @@ function renderSettingsModal(state) {
         <label class="field"><span>模型</span>
           <input class="input" data-setting="llm.model" placeholder="gpt-4o-mini" value="${esc(s.llm.model)}">
         </label>
+
+        ${renderSyncBlock()}
       </div>
       <div class="modal-foot">
         <span class="grow"></span>
@@ -1457,6 +1469,131 @@ function renderFocus(state) {
   </div>`;
 }
 
+/* ---------------- 设备同步（GitHub Gist） ---------------- */
+
+function fmtSyncTime(iso) {
+  if (!iso) return '从未';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '从未';
+  return `${d.getMonth() + 1}/${d.getDate()} ${fmtHM(d)}`;
+}
+
+function renderSyncBlock() {
+  const cfg = loadSyncConfig();
+  const connected = !!cfg.gistId;
+  const busy = ui.syncBusy;
+
+  return `
+  <div class="field cons-block sync-block">
+    <span>设备同步（GitHub Gist）</span>
+    <div class="hint">
+      用你的 GitHub 账号当登录，数据存在自己的<strong>私有 Gist</strong> 里，不经过任何第三方服务器。
+      Token 只保存在本机浏览器，<strong>不会上传</strong>。<br>
+      生成方式：GitHub → Settings → Developer settings → <strong>Fine-grained tokens</strong>，
+      权限只勾 <strong>Gists: Read and write</strong>。
+    </div>
+
+    <label class="field">
+      <span>Personal Access Token</span>
+      <input class="input" type="password" data-sync="token"
+        placeholder="github_pat_..." autocomplete="off" spellcheck="false"
+        value="${esc(cfg.token)}">
+    </label>
+
+    <div class="sync-actions">
+      <button class="btn primary sm" data-action="sync-push" ${busy ? 'disabled' : ''}>
+        ${busy ? '处理中…' : '上传到云端'}
+      </button>
+      <button class="btn ghost sm" data-action="sync-pull" ${busy ? 'disabled' : ''}>
+        从云端恢复
+      </button>
+      ${
+        connected
+          ? '<button class="btn ghost sm danger" data-action="sync-forget">断开同步</button>'
+          : ''
+      }
+    </div>
+
+    <div class="sync-status ${ui.syncMsg ? 'has-msg' : ''}">
+      ${
+        connected
+          ? `已连接${cfg.login ? ` · <b>${esc(cfg.login)}</b>` : ''} · 上次同步 ${fmtSyncTime(cfg.lastSyncAt)}`
+          : '未连接'
+      }
+      ${ui.syncMsg ? `<span class="sync-msg">${esc(ui.syncMsg)}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function readTokenFromModal() {
+  const el = document.querySelector('[data-sync="token"]');
+  return (el?.value ?? '').trim();
+}
+
+async function doSyncPush() {
+  const token = readTokenFromModal();
+  if (!token) {
+    ui.syncMsg = '请先填 Token';
+    render();
+    return;
+  }
+  saveSyncConfig({ token });
+  ui.syncBusy = true;
+  ui.syncMsg = '上传中…';
+  render();
+
+  try {
+    const cfg = loadSyncConfig();
+    const state = getState();
+    const res = await pushState(state, cfg);
+    saveSyncConfig({ gistId: res.gistId, lastSyncAt: new Date().toISOString() });
+    ui.syncMsg = res.created ? '已创建云端备份 ✓' : '已上传 ✓';
+    toast(res.created ? '已在云端创建备份' : '已同步到云端', 'ok');
+  } catch (err) {
+    ui.syncMsg = err.message;
+    toast(err.message, 'error');
+  } finally {
+    ui.syncBusy = false;
+    render();
+  }
+}
+
+async function doSyncPull() {
+  const token = readTokenFromModal();
+  if (!token) {
+    ui.syncMsg = '请先填 Token';
+    render();
+    return;
+  }
+  saveSyncConfig({ token });
+
+  const cfg = loadSyncConfig();
+  if (!cfg.gistId) {
+    ui.syncMsg = '还没有云端备份，先点「上传到云端」';
+    render();
+    return;
+  }
+
+  ui.syncBusy = true;
+  ui.syncMsg = '拉取中…';
+  render();
+
+  try {
+    const payload = await pullState(cfg);
+    const merged = mergeRemote(payload.state, getState());
+    update(() => merged);
+    saveSyncConfig({ lastSyncAt: new Date().toISOString() });
+    ui.syncMsg = `已恢复云端数据（${fmtSyncTime(payload.updatedAt)}）`;
+    toast('已从云端恢复', 'ok');
+  } catch (err) {
+    ui.syncMsg = err.message;
+    toast(err.message, 'error');
+  } finally {
+    ui.syncBusy = false;
+    render();
+  }
+}
+
 /* ---------------- 事件绑定 ---------------- */
 
 function onDraftInput(e) {
@@ -1701,6 +1838,18 @@ document.addEventListener('click', async (e) => {
       break;
     case 'open-settings':
       ui.settingsOpen = true;
+      ui.syncMsg = '';
+      render();
+      break;
+    case 'sync-push':
+      await doSyncPush();
+      break;
+    case 'sync-pull':
+      await doSyncPull();
+      break;
+    case 'sync-forget':
+      clearSyncConfig();
+      ui.syncMsg = '已断开（云端数据仍在，可重新连接）';
       render();
       break;
     case 'open-attrs':

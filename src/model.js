@@ -292,6 +292,7 @@ export function seedState() {
     slots,
     allocations: [],
     focusSessions: [],
+    updatedAt: new Date().toISOString(),
     settings: {
       horizonDays: 14,
       maxSteps: 5,
