@@ -993,3 +993,34 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   font-variant-numeric: tabular-nums;
   align-self: center;
 }
+
+/* ---------------- 触摸拖拽 ---------------- */
+
+/*
+ * 触摸屏上必须显式声明 touch-action:none，否则手指一移动浏览器就拿去滚页面，
+ * pointermove 会被 pointercancel 打断，拖拽永远走不完。
+ */
+.alloc,
+.dv-alloc,
+.alloc-rz,
+.slot-rz {
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+/* 手机上分片更矮，把手加高一点更好按 */
+@media (max-width: 720px) {
+  .alloc-rz { height: 12px; }
+  .slot-rz { height: 14px; }
+  .alloc-rz::after { width: 22px; height: 3px; }
+  .slot-rz::after { width: 32px; height: 3px; }
+}
+
+/* 选中的任务卡片 */
+.task.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  background: #fbfbff;
+}
+.task-toolbar { background: #eef0ff; }
+.task-toolbar .hint-sm { color: var(--muted); font-size: 11px; }

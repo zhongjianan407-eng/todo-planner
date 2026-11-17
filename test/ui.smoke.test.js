@@ -411,12 +411,18 @@ check('日视图拖动分片真的能改变时间', () => {
   scroller.scrollTop = 360; // 模拟用户已经滚到当天偏下的位置
 
   const before = P.getState().allocations.find((a) => a.id === 'drag_probe').start;
+  // 用触摸指针事件模拟手机操作（原来派发的是 MouseEvent，手机端根本不会触发）
   const fire = (type, target, y) =>
-    target.dispatchEvent(new window.MouseEvent(type, { bubbles: true, clientX: 400, clientY: y }));
+    target.dispatchEvent(
+      new window.PointerEvent(type, {
+        bubbles: true, clientX: 400, clientY: y,
+        pointerId: 1, pointerType: 'touch', button: 0, isPrimary: true,
+      }),
+    );
 
-  fire('mousedown', allocEl, 440);
-  fire('mousemove', document, 420);
-  fire('mouseup', document, 420);
+  fire('pointerdown', allocEl, 440);
+  fire('pointermove', document, 420);
+  fire('pointerup', document, 420);
 
   assert.deepEqual(errors, [], `拖拽抛异常：${errors.join('; ')}`);
 
@@ -455,11 +461,16 @@ await (async () => {
   allocEl.getBoundingClientRect = fakeRect(380, 120);
 
   const fire = (type, target, y) =>
-    target.dispatchEvent(new window.MouseEvent(type, { bubbles: true, clientX: 400, clientY: y }));
+    target.dispatchEvent(
+      new window.PointerEvent(type, {
+        bubbles: true, clientX: 400, clientY: y,
+        pointerId: 2, pointerType: 'touch', button: 0, isPrimary: true,
+      }),
+    );
 
-  fire('mousedown', allocEl, 440);
-  fire('mousemove', document, 430);
-  fire('mouseup', document, 430); // 到这一步，点击抑制被激活
+  fire('pointerdown', allocEl, 440);
+  fire('pointermove', document, 430);
+  fire('pointerup', document, 430); // 到这一步，点击抑制被激活
 
   // 真实浏览器里补发的 click 和 mouseup 同一任务，之后就该解除抑制。
   // 这里等一个宏任务，模拟「用户拖完，过一会儿又点了个按钮」。
@@ -788,6 +799,85 @@ check('还原现场并收起编辑器', () => {
   assert.equal(P.getState().attributes.length, attrsBackup.length);
   click($('[data-action="toggle-attr-edit"]'));
   assert.equal($('.attr-editor'), null, '收起后不该还展开');
+});
+
+console.log('\n[UI] 触摸拖拽（手机端回归）');
+
+check('触摸拖「时段底边」能改结束时间', () => {
+  const P = window.__PLANNER__;
+  click($('[data-action="set-view"][data-id="week"]'));
+
+  const rz = $('[data-slot-rz]');
+  assert.ok(rz, '没有时段拉伸把手');
+  const slotId = rz.dataset.slotRz;
+  const before = P.getState().slots.find((s) => s.id === slotId).end;
+
+  const slotEl = rz.closest('.slot');
+  const body = slotEl.querySelector('[data-body]');
+  assert.ok(body, '周视图时段缺少 data-body');
+
+  const fake = (top, height) => () => ({
+    top, bottom: top + height, left: 0, right: 800,
+    height, width: 800, x: 0, y: top,
+    toJSON() { return this; },
+  });
+  slotEl.getBoundingClientRect = fake(100, 144);
+  body.getBoundingClientRect = fake(100, 144);
+
+  const fire = (type, target, y) =>
+    target.dispatchEvent(
+      new window.PointerEvent(type, {
+        bubbles: true, clientX: 400, clientY: y,
+        pointerId: 3, pointerType: 'touch', button: 0, isPrimary: true,
+      }),
+    );
+
+  fire('pointerdown', rz, 200);
+  fire('pointermove', document, 240);
+  fire('pointerup', document, 240);
+
+  const after = P.getState().slots.find((s) => s.id === slotId).end;
+  assert.notEqual(after, before, `时段结束时间没变（${before}）`);
+
+  // 还原
+  P.update((s2) => ({
+    ...s2,
+    slots: s2.slots.map((x) => (x.id === slotId ? { ...x, end: before } : x)),
+  }));
+});
+
+console.log('\n[UI] 点选放入（手机端替代拖拽）');
+
+check('点任务卡片可以选中', () => {
+  const P = window.__PLANNER__;
+  click($('[data-action="set-view"][data-id="week"]'));
+  const card = $('.task');
+  const id = card.dataset.task;
+  click(card);
+  assert.ok($('.task-toolbar'), '没有出现已选中提示条');
+  assert.ok($(`[data-task="${id}"]`).classList.contains('selected'), '卡片没有选中态');
+});
+
+check('点时段把任务放进去', () => {
+  const P = window.__PLANNER__;
+  const before = P.getState().allocations.length;
+  const slotEl = $('[data-slot-inst]');
+  assert.ok(slotEl, '没有时段');
+  const instId = slotEl.dataset.slotInst;
+  click(slotEl);
+
+  const after = P.getState().allocations;
+  assert.ok(after.length > before, '没有新增分片');
+  const created = after.find((a) => `${a.date}#${a.slotId}` === instId);
+  assert.ok(created, '新增的分片不在被点的时段里');
+  assert.equal($('.task-toolbar'), null, '放入后应自动取消选中');
+});
+
+check('取消按钮能清掉选中', () => {
+  click($('.task'));
+  assert.ok($('.task-toolbar'));
+  click($('[data-action="clear-task-sel"]'));
+  assert.equal($('.task-toolbar'), null);
 });
 
 check('整个过程没有抛未捕获错误', () => {

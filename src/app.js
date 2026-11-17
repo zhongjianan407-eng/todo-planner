@@ -88,6 +88,7 @@ const ui = {
   settingsOpen: false,
   attrEditing: false,
   selectedAlloc: null,
+  selectedTask: null,
   busy: false,
   toast: null,
   view: 'week', // 'day' | 'week' | 'month'
@@ -198,8 +199,9 @@ function renderTaskCard(state, task, { isChild = false } = {}) {
   })();
 
   return `
-  <div class="task ${isChild ? 'task-child' : ''} ${task.status === 'done' ? 'is-done' : ''}"
-       draggable="true" data-task="${task.id}">
+  <div class="task ${isChild ? 'task-child' : ''} ${task.status === 'done' ? 'is-done' : ''} ${
+    ui.selectedTask === task.id ? 'selected' : ''
+  }" draggable="true" data-task="${task.id}">
     <div class="task-row">
       <button class="tick" data-action="toggle-done" data-id="${task.id}"
         title="标记完成">${task.status === 'done' ? '✓' : ''}</button>
@@ -840,6 +842,17 @@ function render() {
       ${renderTaskPanel(state)}
       <section class="panel panel-calendar">
         ${renderCalendarToolbar()}
+        ${
+          ui.selectedTask
+            ? `<div class="alloc-toolbar task-toolbar">
+                 <span>已选中任务：<b>${esc(
+                   state.tasks.find((t) => t.id === ui.selectedTask)?.title ?? '',
+                 )}</b></span>
+                 <span class="hint-sm">点任意时段即可放入（手机上不用拖拽）</span>
+                 <button class="btn ghost sm" data-action="clear-task-sel">取消</button>
+               </div>`
+            : ''
+        }
         ${
           ui.view === 'month'
             ? renderMonth(state)
@@ -1720,7 +1733,30 @@ document.addEventListener('click', async (e) => {
   }
 
   const el = e.target.closest('[data-action]');
-  if (!el) return;
+  if (!el) {
+    const slotEl = e.target.closest('[data-slot-inst]');
+    const card = e.target.closest('[data-task]');
+
+    // 已选任务 + 点了时段 → 直接放进去（这是手机端的替代方案）
+    if (slotEl && ui.selectedTask) {
+      const taskId = ui.selectedTask;
+      ui.selectedTask = null;
+      placeManual(taskId, slotEl.dataset.slotInst);
+      return;
+    }
+    // 点任务卡片本体 → 选中/取消选中
+    if (card) {
+      const id0 = card.dataset.task;
+      ui.selectedTask = ui.selectedTask === id0 ? null : id0;
+      render();
+      return;
+    }
+    if (slotEl) {
+      toast('先点左侧任务选中它，再点时段就能放入');
+      return;
+    }
+    return;
+  }
   const action = el.dataset.action;
   const id = el.dataset.id;
   const state = getState();
@@ -1872,6 +1908,10 @@ document.addEventListener('click', async (e) => {
     case 'del-alloc':
       update((s) => ({ ...s, allocations: s.allocations.filter((a) => a.id !== ui.selectedAlloc) }));
       ui.selectedAlloc = null;
+      render();
+      break;
+    case 'clear-task-sel':
+      ui.selectedTask = null;
       render();
       break;
     case 'deselect-alloc':
@@ -2173,8 +2213,13 @@ function showGhost(slotEl, topPx, height, draggingId) {
   if (ghost.parentElement !== area) area.appendChild(ghost);
 }
 
-document.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
+/*
+ * 拖拽统一用 Pointer Events：
+ * 手机上触摸屏只发 pointer/touch 事件，根本不会发 mousedown，
+ * 所以原来用 mouse 事件写的拖拽在手机上完全没有反应。
+ */
+document.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return; // 只响应主键/单指
   // 点在按钮/链接上时不要触发拖拽
   if (e.target.closest('[data-action]')) return;
 
@@ -2245,7 +2290,7 @@ document.addEventListener('mousedown', (e) => {
   }
 });
 
-document.addEventListener('mousemove', (e) => {
+document.addEventListener('pointermove', (e) => {
   if (!ptr) return;
   const dy = e.clientY - ptr.startY;
   ptr.moved = Math.max(ptr.moved, Math.abs(dy), Math.abs(e.movementX || 0));
@@ -2286,7 +2331,7 @@ document.addEventListener('mousemove', (e) => {
   }
 });
 
-document.addEventListener('mouseup', (e) => {
+document.addEventListener('pointerup', (e) => {
   if (!ptr) return;
   const p = ptr;
   ptr = null;
@@ -2398,6 +2443,15 @@ document.addEventListener('mouseup', (e) => {
       overflow.length ? 'warn' : 'info',
     );
   }
+});
+
+/* 系统手势/来电等打断拖拽时，安全收尾，别留下半个 ghost */
+document.addEventListener('pointercancel', () => {
+  if (!ptr) return;
+  ptr = null;
+  document.body.classList.remove('dragging-alloc', 'resizing');
+  clearGhost();
+  render();
 });
 
 /* ---------------- 启动 ---------------- */

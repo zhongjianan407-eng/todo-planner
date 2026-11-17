@@ -33,8 +33,8 @@ node test/edit.test.js         # 手动移动/拉伸 + 指针换算 21 个用例
 node test/focus.test.js        # 专注计时逻辑 14 个用例
 node test/writeback.test.js    # 时长回写 / 夹紧 / 还原 14 个用例
 node test/sync.test.js         # 同步数据整形 / 合并 / 凭证 10 个用例
-node test/css.test.js          # 手机端布局契约 12 个用例（静态检查）
-node test/ui.smoke.test.js     # jsdom 真实渲染 + 模拟点击 68 个用例（需 pnpm add -D jsdom）
+node test/css.test.js          # 手机端布局 / 触摸契约 13 个用例（静态检查）
+node test/ui.smoke.test.js     # jsdom 真实渲染 + 模拟点击 72 个用例（需 pnpm add -D jsdom）
 
 # 或一次跑完
 npm test
@@ -415,6 +415,35 @@ https://<你的用户名>.github.io/<仓库名>/
 所以这里退一步把这些关键规则钉死，防止以后被无意改回去——它验的是"修复还在"，不是"渲染正确"。
 
 
+
+
+---
+
+## 手机端操作（v0.9）
+
+### 修了什么
+
+拖拽原来用 `mousedown / mousemove / mouseup`，**触摸屏根本不发这些事件**，所以手机上时段和分片完全拖不动。
+现在统一改成 **Pointer Events**（`pointerdown / pointermove / pointerup / pointercancel`），鼠标和触摸走同一套逻辑。
+
+配套两件事：
+
+- `.alloc / .dv-alloc / .alloc-rz / .slot-rz` 声明 `touch-action: none`。
+  少了这条，手指一移动浏览器就拿去滚页面，`pointermove` 会被 `pointercancel` 打断，拖拽永远走不完。
+- 手机上把手加高（分片底边 12px、时段底边 14px），更容易按到。
+
+### 手机上怎么操作
+
+| 想要 | 怎么做 |
+|---|---|
+| 移动分片 | 按住分片拖动 |
+| 改分片时长 | 按住分片**底边**拖动 |
+| 改时段结束时间 | 按住时段**底边**拖动 |
+| 把任务放进时段 | **点一下任务卡片选中**，再**点任意时段** |
+
+最后一条是为手机专门加的：HTML5 拖放（把卡片拖进时段）在触摸屏上完全不工作，
+而把整个任务列表做成可拖拽又会和「上下滑动列表」冲突。所以改成"点选 → 点时段"，
+桌面端两种方式都能用。
 
 ---
 

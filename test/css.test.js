@@ -95,6 +95,19 @@ test('表单行子项设置了 min-width:0', () => {
   assert.match(css, /\.field-row > \*[^{]*\{[^}]*min-width:\s*0/);
 });
 
+console.log('\n[3] 触摸拖拽');
+
+test('可拖拽元素声明了 touch-action: none', () => {
+  // 少了这条，手指一移动浏览器就拿去滚页面，pointermove 会被 pointercancel 打断
+  const m = /touch-action:\s*none/g;
+  assert.ok(m.test(css), '整份样式里没有 touch-action: none');
+  for (const sel of ['.alloc', '.dv-alloc', '.alloc-rz', '.slot-rz']) {
+    const idx = css.indexOf(`${sel},`);
+    const idx2 = css.indexOf(`${sel} {`);
+    assert.ok(idx !== -1 || idx2 !== -1, `${sel} 没有声明 touch-action`);
+  }
+});
+
 console.log('\n[3] 手机断点');
 
 test('存在 720px 断点', () => {
