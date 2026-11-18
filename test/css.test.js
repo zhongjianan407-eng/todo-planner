@@ -132,6 +132,19 @@ test('周视图在窄屏横向滚动而不是撑破页面', () => {
   assert.match(block('.week-grid'), /overflow-x:\s*auto/);
 });
 
+test('分片上的 ✓/✕ 按钮默认可见', () => {
+  // 教训：opacity:0 一旦放在基础规则里，就全靠另一条更高优先级的规则去救，
+  // 那条规则的类名对不上（或样式没更新）时按钮就整个消失，且没有任何报错。
+  assert.doesNotMatch(block('.alloc-tools'), /opacity:\s*0/, '基础规则不能藏按钮');
+  assert.match(block('.alloc .alloc-tools'), /opacity:\s*0/, '周视图才用 hover 隐藏');
+  assert.match(block('.dv-alloc .alloc-tools'), /opacity:\s*1/, '日视图必须常显');
+});
+
+test('✓ / ✕ 平时就带语义色', () => {
+  assert.match(block('.tool-btn.ok'), /color:\s*#0f9d58/);
+  assert.match(block('.tool-btn.bad'), /color:\s*#d63031/);
+});
+
 test('样式表花括号配平', () => {
   assert.equal(
     (css.match(/\{/g) || []).length,

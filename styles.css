@@ -998,6 +998,13 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 
 /* ---------------- 分片上的执行按钮 ---------------- */
 
+/*
+ * 基础规则里**不设 opacity**，默认就是可见的。
+ * 只有周视图（.alloc）空间紧张，才用 hover 才显示；
+ * 日视图（.dv-alloc）不受影响，永远可见。
+ * —— 之前把 opacity:0 放在基础规则里，日视图靠一条更高优先级的覆盖去救，
+ *    结果一旦那条规则的类名对不上，按钮就整个消失了。
+ */
 .alloc-tools {
   position: absolute;
   top: 2px;
@@ -1005,7 +1012,10 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 2;
+  z-index: 3;
+}
+
+.alloc .alloc-tools {
   opacity: 0;
   transition: opacity 0.12s ease;
 }
@@ -1014,7 +1024,7 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 
 /* 触摸设备没有 hover，必须常显 */
 @media (hover: none) {
-  .alloc-tools { opacity: 1; }
+  .alloc .alloc-tools { opacity: 1; }
 }
 
 .tool-btn {
@@ -1033,6 +1043,9 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   transition: all 0.14s ease;
 }
 .tool-btn:hover { transform: scale(1.12); }
+/* ✓ / ✕ 平时就要有颜色，一眼能认出来 */
+.tool-btn.ok { color: #0f9d58; border-color: rgba(15, 157, 88, 0.45); }
+.tool-btn.bad { color: #d63031; border-color: rgba(214, 48, 49, 0.45); }
 .tool-btn.ok:hover { background: #0f9d58; border-color: #0f9d58; color: #fff; }
 .tool-btn.bad:hover { background: #d63031; border-color: #d63031; color: #fff; }
 
@@ -1044,14 +1057,15 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 .alloc.missed { border-left-color: #d63031; background: color-mix(in srgb, #d63031 7%, white); }
 
 /* 日视图里按钮横排在右侧 */
-.dv-alloc .alloc-tools.day {
+.dv-alloc .alloc-tools {
   position: static;
   flex-direction: row;
   opacity: 1;
   align-self: center;
   flex: 0 0 auto;
+  gap: 4px;
 }
-.dv-alloc .alloc-tools.day .tool-btn { width: 26px; height: 26px; font-size: 13px; }
+.dv-alloc .alloc-tools .tool-btn { width: 28px; height: 28px; font-size: 13px; }
 .dv-alloc.done { border-left-color: #0f9d58; background: color-mix(in srgb, #0f9d58 7%, white); }
 .dv-alloc.done .dv-alloc-t { text-decoration: line-through; opacity: 0.75; }
 .dv-alloc.missed { border-left-color: #d63031; background: color-mix(in srgb, #d63031 6%, white); }
