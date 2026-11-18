@@ -9,6 +9,64 @@
 </head>
 <body>
   <div id="app"></div>
+
+  <!--
+    开机自检：JS 没跑起来时，页面会一片空白，什么线索都没有。
+    这段脚本把失败原因直接显示出来（脚本 404 / 运行时异常 / 模块没执行）。
+  -->
+  <script>
+    (function () {
+      var app = document.getElementById('app');
+      function show(msg) {
+        if (!app || app.getAttribute('data-boot-error') === '1') return;
+        app.setAttribute('data-boot-error', '1');
+        app.innerHTML =
+          '<div style="max-width:560px;margin:0 auto;padding:40px 24px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\',sans-serif;color:#171a20">' +
+          '<h2 style="font-size:17px;margin:0 0 10px">页面没能加载起来</h2>' +
+          '<p style="color:#6b7480;font-size:13px;line-height:1.7;margin:0 0 12px">' +
+          '把下面这段信息发给我就能定位问题：</p>' +
+          '<pre style="background:#f4f6f9;border:1px solid #e3e7ee;padding:12px;border-radius:8px;' +
+          'font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' +
+          String(msg).replace(/&/g, '&amp;').replace(/</g, '&lt;') +
+          '</pre></div>';
+      }
+
+      // 资源加载失败（比如某个 .js 404）和运行时异常都会走这里
+      window.addEventListener('error', function (e) {
+        if (e.target && e.target.tagName === 'SCRIPT') {
+          show('脚本加载失败：' + (e.target.src || '(未知)'));
+        } else {
+          show('运行出错：' + (e.message || e.error || '未知错误'));
+        }
+      }, true);
+
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        show('Promise 异常：' + (r && r.message ? r.message : r));
+      });
+
+      // 兜底：3 秒后还是一片空白，说明模块压根没执行
+      setTimeout(function () {
+        if (app && app.children.length === 0) {
+          show(
+            '3 秒后页面仍然为空。\n可能的原因：\n' +
+            '1. 浏览器缓存了旧文件 —— 试试无痕窗口\n' +
+            '2. 浏览器版本过旧，不支持 ES module\n' +
+            '3. 某个浏览器插件拦截了脚本'
+          );
+        }
+      }, 3000);
+    })();
+  </script>
+
   <script type="module" src="./src/app.js"></script>
+
+  <!-- 不支持 module 的老浏览器根本不会执行上面的脚本，单独给个提示 -->
+  <script nomodule>
+    document.getElementById('app').innerHTML =
+      '<p style="padding:40px;font-family:sans-serif;line-height:1.8">' +
+      '你的浏览器版本过旧，不支持 ES module。<br>请升级到最新版 Safari / Chrome / Edge 后再打开。' +
+      '</p>';
+  </script>
 </body>
 </html>

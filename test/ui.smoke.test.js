@@ -346,10 +346,10 @@ check('日视图时间轴数值合理', () => {
 
 check('日视图分片带计时按钮', () => {
   // 「今天」不一定有排程（取决于当前时刻和时段），先找到一周内真有分片的一天
-  let btn = $('.dv-alloc .focus-btn');
+  let btn = $('.dv-alloc [data-action="focus-open"]');
   for (let i = 0; i < 7 && !btn; i += 1) {
     click($('[data-action="day-next"]'));
-    btn = $('.dv-alloc .focus-btn');
+    btn = $('.dv-alloc [data-action="focus-open"]');
   }
   assert.ok(btn, '一周内都没有带计时按钮的分片');
   click($('[data-action="day-today"]'));
@@ -545,11 +545,11 @@ console.log('\n[UI] 专注计时');
 check('切回周视图并找到计时按钮', () => {
   click($('[data-action="set-view"][data-id="week"]'));
   assert.ok($('.week-grid'), '未回到周视图');
-  assert.ok($('.alloc .focus-btn'), '周视图分片上没有计时按钮');
+  assert.ok($('.alloc [data-action="focus-open"]'), '周视图分片上没有计时按钮');
 });
 
 check('点击计时按钮打开专注弹窗并自动开始', () => {
-  click($('.alloc .focus-btn'));
+  click($('.alloc [data-action="focus-open"]'));
   assert.ok($('.focus-modal'), '专注弹窗未出现');
   assert.ok($('.ring-fg'), '缺少进度环');
   assert.ok($('[data-focus-time]'), '缺少倒计时文本');
@@ -578,7 +578,7 @@ check('结束并记录会写入 focusSessions', () => {
 });
 
 check('收起弹窗后显示悬浮计时条', () => {
-  click($('.alloc .focus-btn'));
+  click($('.alloc [data-action="focus-open"]'));
   assert.ok($('.focus-modal'));
   click($('[data-action="focus-close"]'));
   assert.ok($('.focus-pill'), '缺少右下角悬浮计时条');
@@ -593,7 +593,7 @@ let wbPlanned = null;
 
 check('专注结束后分片按实际时长更新', () => {
   const P = window.__PLANNER__;
-  const ids = $$('.alloc .focus-btn').map((b) => b.closest('[data-alloc]').dataset.alloc);
+  const ids = $$('.alloc [data-action="focus-open"]').map((b) => b.closest('[data-alloc]').dataset.alloc);
   wbAllocId = ids.find((id) => {
     const a = P.getState().allocations.find((x) => x.id === id);
     return a && (new Date(a.end) - new Date(a.start)) / 60000 >= 30;
@@ -603,7 +603,7 @@ check('专注结束后分片按实际时长更新', () => {
   const before = P.getState().allocations.find((a) => a.id === wbAllocId);
   wbPlanned = (new Date(before.end) - new Date(before.start)) / 60000;
 
-  click(document.querySelector(`[data-alloc="${wbAllocId}"] .focus-btn`));
+  click(document.querySelector(`[data-alloc="${wbAllocId}"] [data-action="focus-open"]`));
   P.focus.session.accumulatedMs = 15 * 60000;
   P.focus.session.startedAtMs = Date.now();
   click($('[data-action="focus-finish"]'));
@@ -646,7 +646,7 @@ check('关闭回写开关后只记录、不修改日程', () => {
   const st = P.getState();
   st.settings.writeBack = false;
 
-  const ids = $$('.alloc .focus-btn').map((b) => b.closest('[data-alloc]').dataset.alloc);
+  const ids = $$('.alloc [data-action="focus-open"]').map((b) => b.closest('[data-alloc]').dataset.alloc);
   const id = ids.find((x) => {
     const a = st.allocations.find((y) => y.id === x);
     return a && (new Date(a.end) - new Date(a.start)) / 60000 >= 30;
@@ -656,7 +656,7 @@ check('关闭回写开关后只记录、不修改日程', () => {
   const before = (new Date(st.allocations.find((a) => a.id === id).end)
     - new Date(st.allocations.find((a) => a.id === id).start)) / 60000;
 
-  click(document.querySelector(`[data-alloc="${id}"] .focus-btn`));
+  click(document.querySelector(`[data-alloc="${id}"] [data-action="focus-open"]`));
   P.focus.session.accumulatedMs = 10 * 60000;
   P.focus.session.startedAtMs = Date.now();
   const sessionsBefore = st.focusSessions.length;
@@ -878,6 +878,57 @@ check('取消按钮能清掉选中', () => {
   assert.ok($('.task-toolbar'));
   click($('[data-action="clear-task-sel"]'));
   assert.equal($('.task-toolbar'), null);
+});
+
+console.log('\n[UI] 分片执行状态（✓ 完成 / ✕ 顺延）');
+
+check('每个分片都有 ✓ 和 ✕ 按钮', () => {
+  click($('[data-action="set-view"][data-id="week"]'));
+  assert.ok($$('[data-action="alloc-done"]').length > 0, '没有 ✓ 按钮');
+  assert.ok($$('[data-action="alloc-missed"]').length > 0, '没有 ✕ 按钮');
+});
+
+check('点 ✓ 标记为已完成并自动锁定', () => {
+  const P = window.__PLANNER__;
+  const btn = $('[data-action="alloc-done"]');
+  assert.ok(btn, '找不到 ✓ 按钮');
+  const id = btn.dataset.id;
+  click(btn);
+
+  const a = P.getState().allocations.find((x) => x.id === id);
+  assert.equal(a.status, 'done', '状态没变成 done');
+  assert.equal(a.locked, true, '完成后应锁定，避免被重排冲掉');
+  assert.ok(document.querySelector('.alloc.done'), '没有出现完成样式');
+});
+
+check('再点一次 ✓ 可以取消完成', () => {
+  const P = window.__PLANNER__;
+  const doneBtn = $$('[data-action="alloc-done"]').find((b) =>
+    P.getState().allocations.find((a) => a.id === b.dataset.id)?.status === 'done',
+  );
+  assert.ok(doneBtn, '没有已完成的分片');
+  const id = doneBtn.dataset.id;
+  click(doneBtn);
+  const a = P.getState().allocations.find((x) => x.id === id);
+  assert.equal(a.status, undefined, '状态没清掉');
+  assert.equal(a.locked, false, '锁定没解除');
+});
+
+check('点 ✕ 会把分片往后顺延', () => {
+  const P = window.__PLANNER__;
+  const btn = $('[data-action="alloc-missed"]');
+  assert.ok(btn, '找不到 ✕ 按钮');
+  const id = btn.dataset.id;
+  const before = P.getState().allocations.find((x) => x.id === id).start;
+  click(btn);
+
+  const a = P.getState().allocations.find((x) => x.id === id);
+  const moved = a.start !== before;
+  const missed = a.status === 'missed';
+  assert.ok(moved || missed, '既没顺延也没标记，静默失败了');
+  if (moved) {
+    assert.ok(new Date(a.start) > new Date(before), '顺延后时间应该更晚');
+  }
 });
 
 check('整个过程没有抛未捕获错误', () => {

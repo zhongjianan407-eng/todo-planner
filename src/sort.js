@@ -33,8 +33,15 @@ export function taskTotals(task, tasks, allocations) {
   const kids = childrenOf(tasks, task.id);
   if (kids.length === 0) {
     const est = task.estMin || 0;
-    const done = scheduledMin(task, tasks, allocations);
-    return { est, scheduled: done, remaining: Math.max(0, est - done) };
+    const mine = allocations.filter((a) => a.taskId === task.id);
+    const scheduled = mine.reduce(
+      (sum, a) => sum + minutesBetween(new Date(a.start), new Date(a.end)),
+      0,
+    );
+    const done = mine
+      .filter((a) => a.status === 'done')
+      .reduce((sum, a) => sum + minutesBetween(new Date(a.start), new Date(a.end)), 0);
+    return { est, scheduled, remaining: Math.max(0, est - scheduled), done };
   }
   return kids.reduce(
     (acc, k) => {
@@ -43,9 +50,10 @@ export function taskTotals(task, tasks, allocations) {
         est: acc.est + t.est,
         scheduled: acc.scheduled + t.scheduled,
         remaining: acc.remaining + t.remaining,
+        done: acc.done + t.done,
       };
     },
-    { est: 0, scheduled: 0, remaining: 0 },
+    { est: 0, scheduled: 0, remaining: 0, done: 0 },
   );
 }
 

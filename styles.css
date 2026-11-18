@@ -641,36 +641,7 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 
 /* ---------------- 专注计时 ---------------- */
 
-/* 计时按钮：实心圆按钮，尺寸和颜色都由 --c 驱动 */
-.focus-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  flex: 0 0 auto;
-  width: 34px; height: 34px;
-  padding: 0; border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--c, #636e72) 45%, #fff);
-  background: #fff;
-  color: color-mix(in srgb, var(--c, #636e72) 82%, #14171c);
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.14);
-  cursor: pointer;
-  transition: transform 0.14s ease, background 0.14s ease, color 0.14s ease,
-    border-color 0.14s ease, box-shadow 0.14s ease;
-}
-.focus-btn:hover {
-  background: var(--c, var(--accent));
-  color: #fff;
-  border-color: var(--c, var(--accent));
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--c, #4f46e5) 38%, transparent);
-  transform: scale(1.08);
-}
-.focus-btn:active { transform: scale(0.96); }
-.focus-btn svg { display: block; }
-
-/* 周视图：贴右上角，稍微小一号 */
-.alloc .focus-btn { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; }
-.alloc .alloc-t, .alloc .alloc-h { padding-right: 24px; }
-
-/* 日视图：贴右侧居中，整体更大 */
-.dv-alloc .focus-btn { position: static; width: 30px; height: 30px; align-self: center; }
+/* 日视图分片内边距 */
 .dv-alloc { padding: 4px 8px; gap: 8px; }
 
 .focus-modal .modal-body { align-items: center; text-align: center; }
@@ -1024,3 +995,65 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 }
 .task-toolbar { background: #eef0ff; }
 .task-toolbar .hint-sm { color: var(--muted); font-size: 11px; }
+
+/* ---------------- 分片上的执行按钮 ---------------- */
+
+.alloc-tools {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.alloc:hover .alloc-tools,
+.alloc.sel .alloc-tools { opacity: 1; }
+
+/* 触摸设备没有 hover，必须常显 */
+@media (hover: none) {
+  .alloc-tools { opacity: 1; }
+}
+
+.tool-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--c, #636e72) 30%, #fff);
+  background: #fff;
+  color: color-mix(in srgb, var(--c, #636e72) 75%, #14171c);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+.tool-btn:hover { transform: scale(1.12); }
+.tool-btn.ok:hover { background: #0f9d58; border-color: #0f9d58; color: #fff; }
+.tool-btn.bad:hover { background: #d63031; border-color: #d63031; color: #fff; }
+
+.alloc .alloc-t, .alloc .alloc-h { padding-right: 24px; }
+
+/* 已完成 / 未完成 的状态色 */
+.alloc.done { border-left-color: #0f9d58; background: color-mix(in srgb, #0f9d58 8%, white); }
+.alloc.done .alloc-t { text-decoration: line-through; opacity: 0.75; }
+.alloc.missed { border-left-color: #d63031; background: color-mix(in srgb, #d63031 7%, white); }
+
+/* 日视图里按钮横排在右侧 */
+.dv-alloc .alloc-tools.day {
+  position: static;
+  flex-direction: row;
+  opacity: 1;
+  align-self: center;
+  flex: 0 0 auto;
+}
+.dv-alloc .alloc-tools.day .tool-btn { width: 26px; height: 26px; font-size: 13px; }
+.dv-alloc.done { border-left-color: #0f9d58; background: color-mix(in srgb, #0f9d58 7%, white); }
+.dv-alloc.done .dv-alloc-t { text-decoration: line-through; opacity: 0.75; }
+.dv-alloc.missed { border-left-color: #d63031; background: color-mix(in srgb, #d63031 6%, white); }
+
+.done-min { color: #0f9d58; font-weight: 600; }

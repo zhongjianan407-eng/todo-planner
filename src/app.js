@@ -40,7 +40,10 @@ import {
 import { buildSlotInstances, schedule, usedMinutes } from './scheduler.js';
 import {
   createAllocation,
+  findRescheduleTarget,
   grabOffsetMin,
+  markDone,
+  markMissed,
   moveAllocation,
   pointerToOffsetMin,
   resizeAllocation,
@@ -216,6 +219,7 @@ function renderTaskCard(state, task, { isChild = false } = {}) {
         <div class="task-meta">
           <span class="due ${ds}">${dueTxt}</span>
           <span class="est">${fmtDuration(totals.est)}</span>
+          ${totals.done > 0 ? `<span class="done-min">✓ ${fmtDuration(totals.done)}</span>` : ''}
           <span class="remain ${remaining > 0 ? 'warn' : 'ok'}">${
             remaining > 0 ? `未排 ${fmtDuration(remaining)}` : '已排满'
           }</span>
@@ -380,6 +384,8 @@ function renderWeek(state) {
                         const maxH = Math.max(15, bodyH - top);
                         const h = Math.min(Math.max(15, Math.round(len * PX_PER_MIN)), maxH);
                         return `<div class="alloc ${a.locked ? 'locked' : ''} ${
+                          a.status === 'done' ? 'done' : ''
+                        } ${a.status === 'missed' ? 'missed' : ''} ${
                           ui.selectedAlloc === a.id ? 'sel' : ''
                         }" data-alloc="${a.id}" style="--c:${c ?? '#636e72'};top:${top}px;height:${h}px"
                           title="${esc(label)}  ${fmtHM(new Date(a.start))}–${fmtHM(new Date(a.end))}">
@@ -388,12 +394,18 @@ function renderWeek(state) {
                             a.actualMin != null ? ` · 实${a.actualMin}m` : ''
                           }</span>
                           ${a.locked ? '<span class="pin">锁</span>' : ''}
-                          ${
-                            h >= 26
-                              ? `<button class="focus-btn" data-action="focus-open" data-id="${a.id}"
-                                   title="开始专注计时" aria-label="开始专注计时">${focusIcon(14)}</button>`
-                              : ''
-                          }
+                          <div class="alloc-tools">
+                            ${
+                              h >= 26
+                                ? `<button class="tool-btn" data-action="focus-open" data-id="${a.id}"
+                                     title="开始专注计时">${focusIcon(12)}</button>`
+                                : ''
+                            }
+                            <button class="tool-btn ok" data-action="alloc-done" data-id="${a.id}"
+                              title="按时完成了">✓</button>
+                            <button class="tool-btn bad" data-action="alloc-missed" data-id="${a.id}"
+                              title="没完成，顺延到后面">✕</button>
+                          </div>
                           <span class="alloc-rz" data-alloc-rz="${a.id}" title="拖动调整时长"></span>
                         </div>`;
                       })
@@ -869,6 +881,8 @@ function render() {
                      ? `<button class="btn ghost sm" data-action="restore-planned">还原计划时长</button>`
                      : ''
                  }
+                 <button class="btn ghost sm" data-action="alloc-done" data-id="${ui.selectedAlloc}">✓ 按时完成</button>
+                 <button class="btn ghost sm" data-action="alloc-missed" data-id="${ui.selectedAlloc}">✕ 没完成</button>
                  <button class="btn ghost sm" data-action="toggle-lock">锁定 / 解锁</button>
                  <button class="btn danger ghost sm" data-action="del-alloc">删除</button>
                  <button class="btn ghost sm" data-action="deselect-alloc">取消选择</button>
@@ -1192,7 +1206,9 @@ function renderDay(state) {
       const top = toTop(new Date(a.start));
       const h = Math.max(38, Math.round(minutesBetween(new Date(a.start), new Date(a.end)) * DAY_PX_PER_MIN));
       return `
-      <div class="dv-alloc ${a.locked ? 'locked' : ''} ${ui.selectedAlloc === a.id ? 'sel' : ''}"
+      <div class="dv-alloc ${a.locked ? 'locked' : ''} ${
+        a.status === 'done' ? 'done' : ''
+      } ${a.status === 'missed' ? 'missed' : ''} ${ui.selectedAlloc === a.id ? 'sel' : ''}"
            data-alloc="${a.id}" style="top:${top}px;height:${h}px;--c:${c}">
         <div class="dv-alloc-main">
           <span class="dv-alloc-t">${esc(label)}</span>
@@ -1200,8 +1216,12 @@ function renderDay(state) {
             a.actualMin != null ? ` · 实 ${a.actualMin} 分钟` : ''
           }${a.locked ? ' · 已锁定' : ''}</span>
         </div>
-        <button class="focus-btn" data-action="focus-open" data-id="${a.id}"
-                title="开始专注计时" aria-label="开始专注计时">${focusIcon(17)}</button>
+        <div class="alloc-tools day">
+          <button class="tool-btn" data-action="focus-open" data-id="${a.id}"
+            title="开始专注计时">${focusIcon(14)}</button>
+          <button class="tool-btn ok" data-action="alloc-done" data-id="${a.id}" title="按时完成了">✓</button>
+          <button class="tool-btn bad" data-action="alloc-missed" data-id="${a.id}" title="没完成，顺延">✕</button>
+        </div>
         <span class="alloc-rz" data-alloc-rz="${a.id}" title="拖动调整时长"></span>
       </div>`;
     })
@@ -1895,6 +1915,68 @@ document.addEventListener('click', async (e) => {
         }),
       };
       render();
+      break;
+    }
+    case 'alloc-done': {
+      const cur = getState().allocations.find((a) => a.id === id);
+      if (cur?.status === 'done') {
+        // 再点一次 = 取消完成，误点可以反悔
+        update((s2) => ({
+          ...s2,
+          allocations: s2.allocations.map((a) =>
+            a.id === id ? { ...a, status: undefined, doneAt: undefined, locked: false } : a,
+          ),
+        }));
+        toast('已取消完成标记');
+        break;
+      }
+      const r = markDone({ allocations: getState().allocations, allocId: id });
+      if (!r.ok) {
+        toast(r.error, 'error');
+        break;
+      }
+      update((s2) => ({ ...s2, allocations: r.allocations }));
+      toast('已标记按时完成 ✓', 'ok');
+      break;
+    }
+    case 'alloc-missed': {
+      const st0 = getState();
+      const alloc = st0.allocations.find((a) => a.id === id);
+      if (!alloc) break;
+      // 从这块所在周往后找 5 周，够长任务顺延
+      const insts = buildSlotInstances(st0.slots, startOfWeek(new Date(alloc.start)), 35);
+      const target = findRescheduleTarget({
+        allocations: st0.allocations,
+        instances: insts,
+        allocId: id,
+        tasks: st0.tasks,
+      });
+
+      if (!target) {
+        const m = markMissed({ allocations: st0.allocations, allocId: id });
+        update((s2) => ({ ...s2, allocations: m.allocations }));
+        toast('后面没找到足够空位，先标成未完成', 'warn');
+        break;
+      }
+
+      const mv = moveAllocation({
+        allocations: st0.allocations,
+        instances: insts,
+        allocId: id,
+        targetInstId: target.instId,
+        offsetMin: target.offsetMin,
+      });
+      if (!mv.ok) {
+        toast(mv.error, 'error');
+        break;
+      }
+      update((s2) => ({
+        ...s2,
+        allocations: mv.allocations.map((a) =>
+          a.id === id ? { ...a, status: 'pending', movedAt: new Date().toISOString() } : a,
+        ),
+      }));
+      toast(`没完成，已顺延到 ${fmtDateKey(target.date)}`, 'warn');
       break;
     }
     case 'toggle-lock':
