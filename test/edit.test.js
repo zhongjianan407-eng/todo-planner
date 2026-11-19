@@ -7,13 +7,17 @@ import assert from 'node:assert/strict';
 import { atDateTime, dateKey, makeSlot, minutesBetween, startOfWeek } from '../src/model.js';
 import { buildSlotInstances } from '../src/scheduler.js';
 import {
+  addTaskChunkOnDate,
+  allocationsOnDate,
   createAllocation,
   findRescheduleTarget,
   grabOffsetMin,
   markDone,
   markMissed,
+  minutesByDateForTask,
   moveAllocation,
   pointerToOffsetMin,
+  removeTaskFromDate,
   resizeAllocation,
   resizeSlotEnd,
 } from '../src/edit.js';
@@ -449,6 +453,98 @@ test('❌ 标记未完成会留下 missed 状态', () => {
   assert.ok(r.ok);
   assert.equal(r.allocations[0].status, 'missed');
   assert.ok(r.allocations[0].missedAt);
+});
+
+console.log('\n[7] 按日期查看 / 修改任务排期');
+
+const richTasks = [{
+  id: 'T1', title: '微积分', estMin: 240, minChunk: 30, maxChunk: 120,
+  attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+  constraints: { allowSlotIds: [], denySlotIds: [], weekdays: [] },
+  parentId: null, order: 0,
+}];
+
+test('能统计出任务每天的排程时长', () => {
+  const allocations = [
+    mkAlloc('a1', 'T1', '09:00', '10:00'),
+    mkAlloc('a2', 'T1', '10:00', '11:00'),
+    mkAlloc('a3', 'OTHER', '09:00', '12:00'),
+  ];
+  const map = minutesByDateForTask(allocations, 'T1');
+  assert.equal(map.get(MON), 120, '同一天的两块应累加');
+  assert.equal(map.size, 1, '别的任务不该算进来');
+});
+
+test('能查出某一天属于该任务的块', () => {
+  const allocations = [mkAlloc('a1', 'T1', '09:00', '10:00'), mkAlloc('a2', 'T1', '10:00', '11:00')];
+  assert.equal(allocationsOnDate(allocations, 'T1', MON).length, 2);
+  assert.equal(allocationsOnDate(allocations, 'T1', '2026-01-01').length, 0);
+});
+
+test('取消某一天的安排只删那一天的', () => {
+  const allocations = [
+    mkAlloc('a1', 'T1', '09:00', '10:00'),
+    mkAlloc('a2', 'T1', '10:00', '11:00', TUE),
+    mkAlloc('a3', 'OTHER', '09:00', '10:00'),
+  ];
+  const r = removeTaskFromDate({ allocations, taskId: 'T1', date: MON });
+  assert.ok(r.ok);
+  assert.equal(r.removed, 1);
+  assert.equal(r.allocations.length, 2);
+  assert.ok(!r.allocations.some((a) => a.id === 'a1'));
+  assert.ok(r.allocations.some((a) => a.id === 'a3'), '别的任务不受影响');
+});
+
+test('这一天没安排时取消会失败而不是报错', () => {
+  const r = removeTaskFromDate({ allocations: [], taskId: 'T1', date: MON });
+  assert.equal(r.ok, false);
+});
+
+test('能在指定日期加一块，自动找该日的空位', () => {
+  const instances = buildSlotInstances(
+    [makeSlot({ id: 's1', weekday: 1, start: '09:00', end: '12:00', attrs: ['attr_deep'] })],
+    BASE, 7,
+  );
+  const r = addTaskChunkOnDate({
+    allocations: [],
+    instances,
+    tasks: richTasks,
+    taskId: 'T1',
+    date: MON,
+    minutes: 120,
+  });
+  assert.ok(r.ok, r.error);
+  assert.equal(r.allocations.length, 1);
+  assert.equal(dur(r.allocations[0]), 120);
+});
+
+test('当天时段已满时给出可读原因', () => {
+  const instances = buildSlotInstances(
+    [makeSlot({ id: 's1', weekday: 1, start: '09:00', end: '10:00', attrs: ['attr_deep'] })],
+    BASE, 7,
+  );
+  const r = addTaskChunkOnDate({
+    allocations: [mkAlloc('full', 'OTHER', '09:00', '10:00')],
+    instances,
+    tasks: richTasks,
+    taskId: 'T1',
+    date: MON,
+    minutes: 60,
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /满/);
+});
+
+test('当天没有匹配属性的时段时原因不同', () => {
+  const instances = buildSlotInstances(
+    [makeSlot({ id: 's1', weekday: 1, start: '09:00', end: '12:00', attrs: ['attr_study'] })],
+    BASE, 7,
+  );
+  const r = addTaskChunkOnDate({
+    allocations: [], instances, tasks: richTasks, taskId: 'T1', date: MON, minutes: 60,
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /属性/);
 });
 
 console.log(`\n${'─'.repeat(48)}`);

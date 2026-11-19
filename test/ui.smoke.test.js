@@ -846,38 +846,94 @@ check('触摸拖「时段底边」能改结束时间', () => {
   }));
 });
 
-console.log('\n[UI] 点选放入（手机端替代拖拽）');
+console.log('\n[UI] 任务详情：排期月历');
 
-check('点任务卡片可以选中', () => {
+let detailState = null;
+
+check('点任务卡片会打开排期详情', () => {
   const P = window.__PLANNER__;
   click($('[data-action="set-view"][data-id="week"]'));
-  const card = $('.task');
-  const id = card.dataset.task;
-  click(card);
-  assert.ok($('.task-toolbar'), '没有出现已选中提示条');
-  assert.ok($(`[data-task="${id}"]`).classList.contains('selected'), '卡片没有选中态');
+
+  // 造一个可判定的场景：一个任务 + 周一一个时段 + 已排好一块
+  const task = {
+    id: 'detail_task', title: '微积分复习', status: 'todo', priority: 2, dueAt: null,
+    estMin: 240, attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+    constraints: { allowSlotIds: [], denySlotIds: [], weekdays: [] },
+    parentId: null, order: 0, minChunk: 60, maxChunk: 120, weeklyQuota: 0,
+    source: 'manual', createdAt: new Date().toISOString(), completedAt: null,
+  };
+  const slots = [{
+    id: 'mon', kind: 'weekly', weekday: 1, date: null,
+    start: '09:00', end: '12:00', name: '周一深度', attrs: ['attr_deep'],
+    capacityMin: null, maxTasks: null,
+  }];
+  detailState = {
+    tasks: P.getState().tasks,
+    slots: P.getState().slots,
+    allocations: P.getState().allocations,
+  };
+  P.update((s) => ({ ...s, tasks: [task], slots, allocations: [] }));
+
+  click($('.task'));
+  assert.ok($('.task-detail'), '没有打开任务详情');
+  assert.equal($$('.tcal-cell').length, 42, '应有 6 周 × 7 天');
+  assert.equal($$('.tcal-cell.has').length, 0, '还没排，不该有高亮日期');
 });
 
-check('点时段把任务放进去', () => {
+check('点空白日期会新增一块', () => {
+  const P = window.__PLANNER__;
+  // 周一才有时段（表头以周一开头，所以 index % 7 === 0 就是周一），且必须在本月内
+  const cell = $$('.tcal-cell').filter(
+    (c, i) => i % 7 === 0 && !c.classList.contains('dim'),
+  )[0];
+  assert.ok(cell, '没有可点的周一');
+  const day = cell.dataset.id;
+
+  click(cell);
+  const mine = P.getState().allocations.filter((a) => a.taskId === 'detail_task' && a.date === day);
+  assert.equal(mine.length, 1, '没有新增分片');
+  assert.ok(document.querySelector(`.tcal-cell[data-id="${day}"]`).classList.contains('has'), '日期没有高亮');
+});
+
+check('再点已安排的日期会取消', () => {
+  const P = window.__PLANNER__;
+  const cell = $('.tcal-cell.has');
+  assert.ok(cell, '没有已安排的日期');
+  const day = cell.dataset.id;
+
+  click(cell);
+  const mine = P.getState().allocations.filter((a) => a.taskId === 'detail_task' && a.date === day);
+  assert.equal(mine.length, 0, '没有取消');
+  assert.equal(
+    document.querySelector(`.tcal-cell[data-id="${day}"]`).classList.contains('has'),
+    false,
+  );
+});
+
+check('可以切换月份', () => {
+  const before = $('.tcal-nav .week-label').textContent;
+  click($('[data-action="task-cal-next"]'));
+  assert.notEqual($('.tcal-nav .week-label').textContent, before, '月份没变');
+  click($('[data-action="task-cal-prev"]'));
+  assert.equal($('.tcal-nav .week-label').textContent, before);
+});
+
+check('详情里可以切到「手动点选放入」', () => {
+  click($('[data-action="task-place-mode"]'));
+  assert.equal($('.task-detail'), null, '详情没关闭');
+  assert.ok($('.task-toolbar'), '没有进入放置模式');
+
   const P = window.__PLANNER__;
   const before = P.getState().allocations.length;
-  const slotEl = $('[data-slot-inst]');
-  assert.ok(slotEl, '没有时段');
-  const instId = slotEl.dataset.slotInst;
-  click(slotEl);
-
-  const after = P.getState().allocations;
-  assert.ok(after.length > before, '没有新增分片');
-  const created = after.find((a) => `${a.date}#${a.slotId}` === instId);
-  assert.ok(created, '新增的分片不在被点的时段里');
-  assert.equal($('.task-toolbar'), null, '放入后应自动取消选中');
+  click($('[data-slot-inst]'));
+  assert.ok(P.getState().allocations.length > before, '没有放进时段');
+  assert.equal($('.task-toolbar'), null, '放入后应自动退出');
 });
 
-check('取消按钮能清掉选中', () => {
-  click($('.task'));
-  assert.ok($('.task-toolbar'));
-  click($('[data-action="clear-task-sel"]'));
-  assert.equal($('.task-toolbar'), null);
+check('恢复现场', () => {
+  const P = window.__PLANNER__;
+  P.update((s) => ({ ...s, ...detailState }));
+  assert.ok(P.getState().tasks.length > 1, '任务列表没恢复');
 });
 
 console.log('\n[UI] 分片执行状态（✓ 完成 / ✕ 顺延）');

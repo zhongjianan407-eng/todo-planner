@@ -337,3 +337,73 @@ export function markMissed({ allocations, allocId, now = new Date() }) {
     ),
   };
 }
+
+
+/* ---------------- 按日期查看 / 修改某个任务的排期 ---------------- */
+
+/** 这个任务在某一天被排了哪些块 */
+export function allocationsOnDate(allocations, taskId, date) {
+  return allocations.filter((a) => a.taskId === taskId && a.date === date);
+}
+
+/** 这个任务每天的排程时长：Map<'YYYY-MM-DD', 分钟数> */
+export function minutesByDateForTask(allocations, taskId) {
+  const map = new Map();
+  for (const a of allocations) {
+    if (a.taskId !== taskId) continue;
+    const m = minutesBetween(new Date(a.start), new Date(a.end));
+    map.set(a.date, (map.get(a.date) || 0) + m);
+  }
+  return map;
+}
+
+/** 把任务在某一天的排期全部取消 */
+export function removeTaskFromDate({ allocations, taskId, date }) {
+  const hit = allocationsOnDate(allocations, taskId, date);
+  if (!hit.length) return { ok: false, error: '这一天本来就没有安排' };
+  const ids = new Set(hit.map((a) => a.id));
+  return {
+    ok: true,
+    removed: hit.length,
+    allocations: allocations.filter((a) => !ids.has(a.id)),
+  };
+}
+
+/**
+ * 在指定日期给任务加一块。
+ * 会按属性 + 任务约束挑一个该日可用的时段，自动找空位。
+ */
+export function addTaskChunkOnDate({ allocations, instances, tasks, taskId, date, minutes }) {
+  const task = tasks.find((t) => t.id === taskId);
+  if (!task) return { ok: false, error: '任务不存在' };
+
+  const unit = { ...task, constraints: effectiveConstraints(task, tasks) };
+  const size = Math.max(5, Number(minutes) || Number(task.maxChunk) || 60);
+
+  const sameDay = instances
+    .filter((i) => i.dateKey === date)
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  if (!sameDay.length) return { ok: false, error: '这一天没有配置时段' };
+
+  let matched = false;
+  for (const inst of sameDay) {
+    if (!matchSlot(inst, unit)) continue;
+    if (!constrainSlot(unit, inst)) continue;
+    matched = true;
+    const r = createAllocation({
+      allocations,
+      instances,
+      taskId,
+      targetInstId: inst.id,
+      offsetMin: 0,
+      minutes: size,
+    });
+    if (r.ok) return r;
+  }
+
+  return {
+    ok: false,
+    error: matched ? '这一天的时段都排满了' : '这一天没有属性匹配的时段',
+  };
+}

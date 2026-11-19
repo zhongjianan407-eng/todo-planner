@@ -40,12 +40,16 @@ import {
 import { buildSlotInstances, schedule, usedMinutes } from './scheduler.js';
 import {
   createAllocation,
+  addTaskChunkOnDate,
+  allocationsOnDate,
   findRescheduleTarget,
   grabOffsetMin,
   markDone,
   markMissed,
+  minutesByDateForTask,
   moveAllocation,
   pointerToOffsetMin,
+  removeTaskFromDate,
   resizeAllocation,
   resizeSlotEnd,
 } from './edit.js';
@@ -92,6 +96,8 @@ const ui = {
   attrEditing: false,
   selectedAlloc: null,
   selectedTask: null,
+  taskDetailId: null,
+  taskCalMonth: null,
   busy: false,
   toast: null,
   view: 'week', // 'day' | 'week' | 'month'
@@ -911,6 +917,7 @@ function render() {
     ${renderTaskModal(state)}
     ${renderSlotModal(state)}
     ${renderSettingsModal(state)}
+    ${renderTaskDetail(state)}
     ${renderFocus(state)}
     ${ui.toast ? `<div class="toast ${ui.toast.kind}">${esc(ui.toast.msg)}</div>` : ''}
   </div>`;
@@ -1716,6 +1723,81 @@ async function doSyncPull() {
   }
 }
 
+/* ---------------- 任务详情：这个任务被排在了哪几天 ---------------- */
+
+function renderTaskDetail(state) {
+  const id = ui.taskDetailId;
+  if (!id) return '';
+  const task = state.tasks.find((t) => t.id === id);
+  if (!task) return '';
+
+  const minutes = minutesByDateForTask(state.allocations, id);
+  const totalMin = [...minutes.values()].reduce((a, b) => a + b, 0);
+  const days = minutes.size;
+
+  // 默认展示最早排期所在月，没有排期就展示本月
+  if (!ui.taskCalMonth) {
+    const first = [...minutes.keys()].sort()[0];
+    ui.taskCalMonth = first ? startOfWeek(parseDateKey(first)) : new Date();
+  }
+  const base = ui.taskCalMonth;
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const first = new Date(year, month, 1);
+  const gridStart = addDays(first, -(isoWeekday(first) - 1));
+  const todayKey = dateKey(new Date());
+
+  const cells = [];
+  for (let i = 0; i < 42; i += 1) {
+    const d = addDays(gridStart, i);
+    const key = dateKey(d);
+    const inMonth = d.getMonth() === month;
+    const min = minutes.get(key);
+    const has = min !== undefined;
+    cells.push(`
+      <button class="tcal-cell ${inMonth ? '' : 'dim'} ${has ? 'has' : ''} ${
+        key === todayKey ? 'today' : ''
+      }" data-action="task-cal-toggle" data-id="${key}"
+        title="${key}${has ? ` · 已排 ${fmtDuration(min)}，点击取消` : ' · 点击安排'}">
+        <span class="tcal-day">${d.getDate()}</span>
+        ${has ? `<span class="tcal-min">${fmtDuration(min)}</span>` : ''}
+      </button>`);
+  }
+
+  return `
+  <div class="overlay" data-action="close-modal">
+    <div class="modal task-detail" data-stop="1">
+      <div class="modal-head">
+        <h3>${esc(task.title)}</h3>
+        <button class="x" data-action="close-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="td-summary">
+          <span>已安排在 <b>${days}</b> 天</span>
+          <span>共 <b>${fmtDuration(totalMin)}</b></span>
+          <span class="td-hint">点空白日期加一块，点已安排日期取消</span>
+        </div>
+
+        <div class="tcal-nav">
+          <button class="btn ghost sm" data-action="task-cal-prev">← 上个月</button>
+          <span class="week-label">${year} 年 ${month + 1} 月</span>
+          <button class="btn ghost sm" data-action="task-cal-next">下个月 →</button>
+        </div>
+
+        <div class="tcal-head">
+          ${WEEKDAYS.map((w) => `<div class="tcal-wd">${w.short}</div>`).join('')}
+        </div>
+        <div class="tcal-grid">${cells.join('')}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-action="task-place-mode" data-id="${id}">改为手动点选放入</button>
+        <span class="grow"></span>
+        <button class="btn primary" data-action="close-modal">完成</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ---------------- 事件绑定 ---------------- */
 
 function onDraftInput(e) {
@@ -1825,10 +1907,10 @@ document.addEventListener('click', async (e) => {
       placeManual(taskId, slotEl.dataset.slotInst);
       return;
     }
-    // 点任务卡片本体 → 选中/取消选中
+    // 点任务卡片本体 → 打开「这个任务排在哪几天」
     if (card) {
-      const id0 = card.dataset.task;
-      ui.selectedTask = ui.selectedTask === id0 ? null : id0;
+      ui.taskDetailId = card.dataset.task;
+      ui.taskCalMonth = null;
       render();
       return;
     }
@@ -2053,6 +2135,67 @@ document.addEventListener('click', async (e) => {
       ui.selectedAlloc = null;
       render();
       break;
+    case 'task-cal-prev':
+      ui.taskCalMonth = new Date(
+        ui.taskCalMonth.getFullYear(),
+        ui.taskCalMonth.getMonth() - 1,
+        1,
+      );
+      render();
+      break;
+    case 'task-cal-next':
+      ui.taskCalMonth = new Date(
+        ui.taskCalMonth.getFullYear(),
+        ui.taskCalMonth.getMonth() + 1,
+        1,
+      );
+      render();
+      break;
+    case 'task-cal-toggle': {
+      const st1 = getState();
+      const taskId = ui.taskDetailId;
+      const day = id; // data-id 是日期
+      const existing = allocationsOnDate(st1.allocations, taskId, day);
+
+      if (existing.length) {
+        const r = removeTaskFromDate({ allocations: st1.allocations, taskId, date: day });
+        if (!r.ok) {
+          toast(r.error, 'error');
+          break;
+        }
+        update((s2) => ({ ...s2, allocations: r.allocations }));
+        toast(`已取消 ${fmtDateKey(day)} 的安排`);
+        break;
+      }
+
+      const task = st1.tasks.find((t) => t.id === taskId);
+      const insts = buildSlotInstances(st1.slots, startOfWeek(parseDateKey(day)), 7);
+      const r = addTaskChunkOnDate({
+        allocations: st1.allocations,
+        instances: insts,
+        tasks: st1.tasks,
+        taskId,
+        date: day,
+        minutes: task?.maxChunk ?? 60,
+      });
+
+      if (!r.ok) {
+        toast(r.error, 'error');
+        break;
+      }
+      update((s2) => ({ ...s2, allocations: r.allocations }));
+      const mins = r.alloc
+        ? minutesBetween(new Date(r.alloc.start), new Date(r.alloc.end))
+        : 0;
+      toast(`已在 ${fmtDateKey(day)} 安排 ${fmtDuration(mins)}`, 'ok');
+      break;
+    }
+    case 'task-place-mode':
+      ui.taskDetailId = null;
+      ui.selectedTask = id;
+      render();
+      toast('点任意时段即可放入');
+      break;
     case 'clear-task-sel':
       ui.selectedTask = null;
       render();
@@ -2227,6 +2370,7 @@ document.addEventListener('click', async (e) => {
       }
       ui.taskModal = null;
       ui.slotModal = null;
+      ui.taskDetailId = null;
       ui.settingsOpen = false;
       render();
       break;

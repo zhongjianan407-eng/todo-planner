@@ -20,7 +20,7 @@ export const SITE = {
   repo: '',
 
   /** 版本号，显示在左下面板，用来判断"看到的是不是最新版" */
-  version: 'v0.13',
+  version: 'v0.14',
 
   /** 站点描述，用于 <meta name="description"> 和分享卡片 */
   description: '输入任务、设置属性与 DDL，按属性匹配时段、自动排程，长任务自动切块。',
