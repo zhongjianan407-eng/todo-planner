@@ -1071,3 +1071,89 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
 .dv-alloc.missed { border-left-color: #d63031; background: color-mix(in srgb, #d63031 6%, white); }
 
 .done-min { color: #0f9d58; font-weight: 600; }
+
+/* ---------------- 日视图顶部：今日待办（Apple 提醒事项风格） ---------------- */
+
+.daytodo {
+  margin: 10px 12px 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.daytodo-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+.daytodo-title { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+.daytodo-count { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.daytodo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.daytodo-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  border-top: 1px solid #f0f2f6;
+}
+
+/* 圆形勾选框 */
+.rem-check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid #c7cdd6;
+  background: transparent;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+.rem-check:hover { border-color: var(--accent); }
+.rem-check:active { transform: scale(0.92); }
+.daytodo-item.done .rem-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.daytodo-main { flex: 1; min-width: 0; }
+.daytodo-label {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.daytodo-item.done .daytodo-label {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.daytodo-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .daytodo { margin: 8px 8px 0; border-radius: 12px; }
+  .daytodo-list { max-height: 38vh; }
+  .daytodo-item { padding: 10px 12px; }
+}

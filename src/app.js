@@ -1119,6 +1119,51 @@ function renderCalendarToolbar() {
 
 const DAY_PX_PER_MIN = 1.1;
 
+/* ---------------- 日视图顶部的今日待办（参考 Apple 提醒事项） ---------------- */
+
+const CHECK_SVG = `<svg viewBox="0 0 12 12" width="12" height="12" fill="none"
+  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2.6 6.2 4.9 8.5 9.4 3.6"/></svg>`;
+
+function renderDayTodo(state, dayAllocs) {
+  if (!dayAllocs.length) return '';
+  const list = [...dayAllocs].sort((a, b) => new Date(a.start) - new Date(b.start));
+  const doneCount = list.filter((a) => a.status === 'done').length;
+
+  const rows = list
+    .map((a) => {
+      const t = state.tasks.find((x) => x.id === a.taskId);
+      const parent = t?.parentId ? state.tasks.find((x) => x.id === t.parentId) : null;
+      const label = parent ? `${parent.title} · ${t?.title}` : t?.title ?? '';
+      const colorAttr = (t?.attrs || []).find((x) => x.strength === 'require');
+      const c = colorAttr ? attrById(state, colorAttr.attrId)?.color : '#636e72';
+      const done = a.status === 'done';
+      return `
+      <li class="daytodo-item ${done ? 'done' : ''}">
+        <button class="rem-check" data-action="alloc-done" data-id="${a.id}"
+          title="${done ? '取消完成' : '标记完成'}"
+          aria-label="${done ? '取消完成' : '标记完成'}">${done ? CHECK_SVG : ''}</button>
+        <div class="daytodo-main">
+          <span class="daytodo-label">${esc(label)}</span>
+          <span class="daytodo-meta">
+            <span class="dot" style="--c:${c}"></span>
+            ${fmtHM(new Date(a.start))}–${fmtHM(new Date(a.end))}
+          </span>
+        </div>
+      </li>`;
+    })
+    .join('');
+
+  return `
+  <div class="daytodo">
+    <div class="daytodo-head">
+      <span class="daytodo-title">今日安排</span>
+      <span class="daytodo-count">${doneCount} / ${list.length} 已完成</span>
+    </div>
+    <ul class="daytodo-list">${rows}</ul>
+  </div>`;
+}
+
 function renderDay(state) {
   const date = ui.dayDate;
   const key = dateKey(date);
@@ -1249,6 +1294,7 @@ function renderDay(state) {
       <button class="btn ghost sm" data-action="new-slot">+ 时段</button>
       <span class="week-hint">${instances.length} 个时段 · 已排 ${fmtDuration(usedTotal)}</span>
     </div>
+    ${renderDayTodo(state, dayAllocs)}
     <div class="dv-scroll" data-scroll-key="day">
       ${
         instances.length === 0 && dayAllocs.length === 0

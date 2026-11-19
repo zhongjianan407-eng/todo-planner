@@ -931,6 +931,72 @@ check('点 ✕ 会把分片往后顺延', () => {
   }
 });
 
+console.log('\n[UI] 日视图顶部「今日安排」');
+
+let todoDate = null;
+
+check('日视图顶部有今日安排清单', () => {
+  const P = window.__PLANNER__;
+  // 直接跳到「确实有分片」的那一天，别依赖扫日期
+  const dates = [...new Set(P.getState().allocations.map((a) => a.date))].sort();
+  assert.ok(dates.length > 0, '一个分片都没有');
+  todoDate = dates[0];
+
+  P.ui.dayDate = new Date(`${todoDate}T12:00:00`);
+  P.ui.view = 'day';
+  click($('[data-action="set-view"][data-id="day"]'));
+
+  assert.ok($('.daytodo'), `没有渲染今日安排（日期 ${todoDate}）`);
+  assert.match($('.daytodo-title').textContent, /今日安排/);
+
+  const items = $$('.daytodo-item');
+  const expect = P.getState().allocations.filter((a) => a.date === todoDate);
+  assert.ok(items.length > 0, '清单是空的');
+  assert.equal(items.length, expect.length, '清单条数和当天分片数不一致');
+});
+
+check('点圆圈标记完成，标题加删除线', () => {
+  const P = window.__PLANNER__;
+  const item = $('.daytodo-item');
+  const btn = item.querySelector('.rem-check');
+  const id = btn.dataset.id;
+
+  click(btn);
+  const a = P.getState().allocations.find((x) => x.id === id);
+  assert.equal(a.status, 'done', '状态没变成 done');
+
+  const after = document.querySelector(`.rem-check[data-id="${id}"]`).closest('.daytodo-item');
+  assert.ok(after.classList.contains('done'), '行没有完成样式');
+  assert.ok(after.querySelector('.rem-check svg'), '勾选框里没有对勾');
+});
+
+check('完成计数会更新', () => {
+  const txt = $('.daytodo-count').textContent;
+  assert.match(txt, /\d+ \/ \d+ 已完成/);
+  const [done, total] = txt.match(/(\d+) \/ (\d+)/).slice(1).map(Number);
+  assert.ok(done >= 1, '至少应有 1 条完成');
+  assert.ok(done <= total);
+});
+
+check('再点一次取消完成', () => {
+  const P = window.__PLANNER__;
+  const btn = $('.daytodo-item.done .rem-check');
+  assert.ok(btn, '找不到已完成的那行');
+  const id = btn.dataset.id;
+  click(btn);
+  const a = P.getState().allocations.find((x) => x.id === id);
+  assert.equal(a.status, undefined, '状态没清掉');
+  assert.equal(document.querySelector(`.rem-check[data-id="${id}"]`).closest('.daytodo-item').classList.contains('done'), false);
+});
+
+check('清单按时间排序', () => {
+  const times = $$('.daytodo-meta')
+    .map((el) => el.textContent.trim().match(/(\d{2}:\d{2})/)?.[1])
+    .filter(Boolean);
+  const sorted = [...times].sort();
+  assert.deepEqual(times, sorted, '清单没有按时间升序');
+});
+
 check('整个过程没有抛未捕获错误', () => {
   assert.deepEqual(errors, []);
 });
