@@ -970,21 +970,69 @@ check('再点一次 ✓ 可以取消完成', () => {
   assert.equal(a.locked, false, '锁定没解除');
 });
 
-check('点 ✕ 会把分片往后顺延', () => {
+check('点 ✕ 会整体重排，且不会排到 DDL 之后', () => {
   const P = window.__PLANNER__;
-  const btn = $('[data-action="alloc-missed"]');
-  assert.ok(btn, '找不到 ✕ 按钮');
-  const id = btn.dataset.id;
-  const before = P.getState().allocations.find((x) => x.id === id).start;
+  const key = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const d1 = new Date(); d1.setDate(d1.getDate() + 1);
+  const d2 = new Date(); d2.setDate(d2.getDate() + 2);
+  const d3 = new Date(); d3.setDate(d3.getDate() + 4); // 故意放在 DDL 之后
+  const k1 = key(d1);
+  const k2 = key(d2);
+  const k3 = key(d3);
+
+  const due = new Date(d2); due.setHours(23, 59, 0, 0);
+
+  // 用「仅某一天」的时段把日期钉死，避免依赖今天星期几。
+  // 关键：存在一个 DDL 之后的时段（k3），旧逻辑会挑它，新逻辑不该碰它。
+  const slots = [k1, k2, k3].map((k, i) => ({
+    id: `once${i}`, kind: 'once', date: k, weekday: 1,
+    start: '09:00', end: '11:00', name: `第${i + 1}天`, attrs: ['attr_deep'],
+    capacityMin: null, maxTasks: null,
+  }));
+
+  const task = {
+    id: 'ddl_task', title: '有截止的任务', status: 'todo', priority: 2,
+    dueAt: due.toISOString(),
+    estMin: 240, attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+    constraints: { allowSlotIds: [], denySlotIds: [], weekdays: [] },
+    parentId: null, order: 0, minChunk: 120, maxChunk: 120, weeklyQuota: 0,
+    source: 'manual', createdAt: new Date().toISOString(), completedAt: null,
+  };
+
+  P.update((s) => ({ ...s, tasks: [task], slots, allocations: [] }));
+
+  const first = P.schedule({ state: P.getState(), weekStart: new Date() });
+  assert.equal(first.created.length, 2, '应排出两块（第三块时段在 DDL 之后，不该用）');
+  assert.ok(!first.created.some((a) => a.date === k3), '初始排程就不该用 DDL 之后的时段');
+  P.update((s) => ({ ...s, allocations: first.created }));
+
+  // 必须让界面显示这块所在的周，并且精确点到「这一块」的 ✕，
+  // 否则点到别的分片，测试会假绿。
+  const monday = new Date(d1);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  P.ui.weekStart = monday;
+  click($('[data-action="set-view"][data-id="week"]'));
+
+  const targetId = first.created[0].id;
+  const btn = document.querySelector(`[data-action="alloc-missed"][data-id="${targetId}"]`);
+  assert.ok(btn, `找不到分片 ${targetId} 的 ✕ 按钮`);
+
   click(btn);
 
-  const a = P.getState().allocations.find((x) => x.id === id);
-  const moved = a.start !== before;
-  const missed = a.status === 'missed';
-  assert.ok(moved || missed, '既没顺延也没标记，静默失败了');
-  if (moved) {
-    assert.ok(new Date(a.start) > new Date(before), '顺延后时间应该更晚');
+  const after = P.getState().allocations.filter((a) => a.taskId === 'ddl_task');
+  const total = after.reduce((s, a) => s + (new Date(a.end) - new Date(a.start)) / 60000, 0);
+
+  assert.equal(total, 240, '重排后总工时不能丢');
+  for (const a of after) {
+    assert.ok(
+      new Date(a.end) <= due,
+      `分片 ${a.date} 排到了 DDL(${due.toISOString()}) 之后`,
+    );
   }
+  assert.ok(!after.some((a) => a.date === k3), '被挪到了 DDL 之后的时段');
 });
 
 console.log('\n[UI] 日视图顶部「今日安排」');

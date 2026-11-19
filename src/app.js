@@ -42,10 +42,8 @@ import {
   createAllocation,
   addTaskChunkOnDate,
   allocationsOnDate,
-  findRescheduleTarget,
   grabOffsetMin,
   markDone,
-  markMissed,
   minutesByDateForTask,
   moveAllocation,
   pointerToOffsetMin,
@@ -1065,13 +1063,21 @@ async function runDecompose(taskId) {
   }
 }
 
-function runSchedule() {
+/**
+ * 跑一次完整重排（清掉未锁定的自动分片，按 slack 重新铺）。
+ * 自动排程按钮和「没完成」都用它，保证两者行为一致。
+ */
+function applyFullSchedule(overrides = {}) {
   const state = getState();
   // 始终从「今天所在周」开始，按设置的跨度往后铺，不受当前浏览到哪一周影响
-  const result = schedule({ state, weekStart: new Date() });
+  const result = schedule({ state: { ...state, ...overrides }, weekStart: new Date() });
   lastResult = result;
   update((s) => ({ ...s, allocations: result.allocations }));
+  return result;
+}
 
+function runSchedule() {
+  const result = applyFullSchedule();
   const span = `${fmtDateKey(result.stats.horizonStart)}–${fmtDateKey(result.stats.horizonEnd)}`;
   toast(
     result.unscheduled.length
@@ -2086,40 +2092,24 @@ document.addEventListener('click', async (e) => {
       const st0 = getState();
       const alloc = st0.allocations.find((a) => a.id === id);
       if (!alloc) break;
-      // 从这块所在周往后找 5 周，够长任务顺延
-      const insts = buildSlotInstances(st0.slots, startOfWeek(new Date(alloc.start)), 35);
-      const target = findRescheduleTarget({
-        allocations: st0.allocations,
-        instances: insts,
-        allocId: id,
-        tasks: st0.tasks,
-      });
 
-      if (!target) {
-        const m = markMissed({ allocations: st0.allocations, allocId: id });
-        update((s2) => ({ ...s2, allocations: m.allocations }));
-        toast('后面没找到足够空位，先标成未完成', 'warn');
-        break;
-      }
+      // 「没做完」意味着这块的时间白费了：先把它移除，再对全部任务重排一次。
+      // 重排按 slack（DDL 紧的优先）排序，严格轮不允许越过 DDL，
+      // 这样才能保证该在 DDL 内完成的任务不被挤到截止之后。
+      const without = st0.allocations.filter((a) => a.id !== id);
+      const result = applyFullSchedule({ allocations: without });
 
-      const mv = moveAllocation({
-        allocations: st0.allocations,
-        instances: insts,
-        allocId: id,
-        targetInstId: target.instId,
-        offsetMin: target.offsetMin,
-      });
-      if (!mv.ok) {
-        toast(mv.error, 'error');
-        break;
+      const late = result.warnings.length;
+      if (late) {
+        toast(`已重排，但有 ${late} 个分片仍超出 DDL，建议加时段或放宽截止`, 'warn');
+      } else if (result.unscheduled.length) {
+        toast(
+          `已重排，${result.unscheduled.length} 个任务仍有部分排不进，可加时段或放宽 DDL`,
+          'warn',
+        );
+      } else {
+        toast('已重排，全部排入 DDL 之内 ✓', 'ok');
       }
-      update((s2) => ({
-        ...s2,
-        allocations: mv.allocations.map((a) =>
-          a.id === id ? { ...a, status: 'pending', movedAt: new Date().toISOString() } : a,
-        ),
-      }));
-      toast(`没完成，已顺延到 ${fmtDateKey(target.date)}`, 'warn');
       break;
     }
     case 'toggle-lock':

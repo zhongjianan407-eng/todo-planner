@@ -288,57 +288,6 @@ export function markDone({ allocations, allocId, now = new Date() }) {
   };
 }
 
-/**
- * 找这块之后第一个「放得下」的空档。
- * 条件与排程引擎一致：属性匹配 + 任务约束 + 容量 + 不与已有分片重叠。
- * 找不到返回 null。
- */
-export function findRescheduleTarget({ allocations, instances, allocId, tasks, now = new Date() }) {
-  const alloc = allocations.find((a) => a.id === allocId);
-  if (!alloc) return null;
-  const task = tasks.find((t) => t.id === alloc.taskId);
-  if (!task) return null;
-
-  const duration = minutesBetween(new Date(alloc.start), new Date(alloc.end));
-  if (duration <= 0) return null;
-
-  const unit = { ...task, constraints: effectiveConstraints(task, tasks) };
-  // 落点必须既在这块之后，也在"现在"之后——
-  // 否则会出现「把昨天没做完的挪到今天早上 9 点」这种已经过去的时间
-  const after = new Date(Math.max(new Date(alloc.end).getTime(), now.getTime()));
-  const others = allocations.filter((a) => a.id !== allocId);
-
-  for (const inst of [...instances].sort((x, y) => x.start - y.start)) {
-    if (inst.end <= after) continue; // 完全在之后的才算
-    if (!matchSlot(inst, unit)) continue;
-    if (!constrainSlot(unit, inst)) continue;
-
-    const win = firstFreeWindow(inst, occupancyFor(inst.id, others), after);
-    if (!win) continue;
-    if (minutesBetween(win.start, win.end) < duration) continue;
-
-    return {
-      instId: inst.id,
-      date: inst.dateKey,
-      offsetMin: minutesBetween(inst.start, win.start),
-    };
-  }
-  return null;
-}
-
-/** ❌ 没完成：标记一下（顺延由调用方用 findRescheduleTarget + moveAllocation 完成） */
-export function markMissed({ allocations, allocId, now = new Date() }) {
-  const alloc = allocations.find((a) => a.id === allocId);
-  if (!alloc) return { ok: false, error: '分片不存在' };
-  return {
-    ok: true,
-    allocations: allocations.map((a) =>
-      a.id === allocId ? { ...a, status: 'missed', missedAt: now.toISOString() } : a,
-    ),
-  };
-}
-
-
 /* ---------------- 按日期查看 / 修改某个任务的排期 ---------------- */
 
 /** 这个任务在某一天被排了哪些块 */
