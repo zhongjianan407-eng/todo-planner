@@ -30,6 +30,7 @@ jobs:
           node test/focus.test.js
           node test/writeback.test.js
           node test/sync.test.js
+          node test/stamp.test.js
           node test/css.test.js
 
   deploy:
@@ -40,6 +41,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # GitHub Pages 给静态资源的响应头是 cache-control: max-age=600，
+      # 浏览器 10 分钟内不会重新请求，导致「明明部署了却看不到新功能」。
+      # 用提交短哈希给资源地址加版本号，URL 一变浏览器就必须重新拉取。
+      - name: 注入版本号（绕开浏览器缓存）
+        run: node scripts/stamp.mjs "${GITHUB_SHA::7}"
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

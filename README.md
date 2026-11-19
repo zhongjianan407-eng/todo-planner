@@ -33,6 +33,7 @@ node test/edit.test.js         # 手动移动/拉伸 + 指针换算 + 完成/顺
 node test/focus.test.js        # 专注计时逻辑 14 个用例
 node test/writeback.test.js    # 时长回写 / 夹紧 / 还原 14 个用例
 node test/sync.test.js         # 同步数据整形 / 合并 / 凭证 10 个用例
+node test/stamp.test.js        # 部署版本号注入 6 个用例
 node test/css.test.js          # 手机端布局 / 触摸 / 按钮可见性契约 15 个用例（静态检查）
 node test/ui.smoke.test.js     # jsdom 真实渲染 + 模拟点击 81 个用例（需 pnpm add -D jsdom）
 
@@ -418,6 +419,52 @@ https://<你的用户名>.github.io/<仓库名>/
 
 
 
+
+
+---
+
+## 缓存问题（v0.13）
+
+### 为什么反复出现「部署了却看不到」
+
+GitHub Pages 给所有静态文件的响应头是：
+
+```
+cache-control: max-age=600
+```
+
+意思是浏览器在 **10 分钟内连问都不问服务器**，直接用本地那份。所以：
+
+- 改了代码、Actions 也绿了
+- 但浏览器还在用 10 分钟前那份旧 JS
+- 表现就是「网站好像没更新」甚至「白屏」
+
+手写一遍「强制刷新」能绕过，但每次都靠用户手动操作不可靠。
+
+### 现在怎么解决
+
+部署前跑一遍 `scripts/stamp.mjs`，把**本次提交的短哈希**加到所有资源地址上：
+
+```html
+<link rel="stylesheet" href="./styles.css?v=2f8a1c9">
+<script type="module" src="./src/app.js?v=2f8a1c9"></script>
+```
+
+```js
+// src/*.js 之间的相对 import 同样注入
+import { ... } from './model.js?v=2f8a1c9';
+```
+
+URL 变了，浏览器就必须重新拉取 —— 每次部署都是全新的地址，缓存彻底失效。
+
+脚本特性：
+
+- **幂等**：同版本号跑两次不会叠加成 `?v=x?v=x`
+- **可覆盖**：换版本号会替换旧的，不是追加
+- **失败就报错**：注入不成功会直接让构建失败，而不是静默发布旧版
+- 只改部署产物，不改仓库里的文件
+
+对应 `test/stamp.test.js` 6 条用例（注入正确性、无漏网 import、语法仍合法、幂等、覆盖、缺参数报错）。
 
 ---
 
