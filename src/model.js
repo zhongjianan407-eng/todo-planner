@@ -177,6 +177,7 @@ export function makeTask(patch = {}) {
     order: 0,
     minChunk: 25,
     maxChunk: 120,
+    weeklyQuota: 0, // 每周最多排几块；0 = 不限（一次性排完为止）
     source: 'manual', // manual | ai
     createdAt: now.toISOString(),
     completedAt: null,

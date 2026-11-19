@@ -24,6 +24,7 @@ import {
   isoWeekday,
   makeConstraints,
   minutesBetween,
+  parseDateKey,
   startOfWeek,
 } from './model.js';
 import { childrenOf } from './sort.js';
@@ -190,6 +191,19 @@ function scheduledMinutesOf(taskId, allocations) {
     .reduce((sum, a) => sum + minutesBetween(new Date(a.start), new Date(a.end)), 0);
 }
 
+/* ---------------- 每周节奏 ---------------- */
+
+/** 某一天所属那一周的周一，用来做「每周 N 块」的分桶 */
+export function weekKeyOf(dateStr) {
+  return dateKey(startOfWeek(parseDateKey(dateStr)));
+}
+
+/** 任务的每周配额，0 表示不限 */
+export function weeklyQuotaOf(task) {
+  const n = Number(task?.weeklyQuota);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
 /* ---------------- 主排程 ---------------- */
 
 /**
@@ -236,6 +250,14 @@ export function schedule({ state, weekStart = new Date(), now = new Date(), dryR
   const warnings = [];
   const working = [...kept];
 
+  // 每个任务在每一周已排了多少块（含已有的锁定分片），用于「每周最多 N 块」
+  const perWeek = new Map();
+  const bucketKey = (taskId, dateStr) => `${taskId}#${weekKeyOf(dateStr)}`;
+  for (const a of working) {
+    const k = bucketKey(a.taskId, a.date);
+    perWeek.set(k, (perWeek.get(k) ?? 0) + 1);
+  }
+
   const groupSlack = (g) => {
     if (!g.dueAt) return Number.POSITIVE_INFINITY;
     const left = minutesBetween(now, new Date(g.dueAt));
@@ -271,18 +293,37 @@ export function schedule({ state, weekStart = new Date(), now = new Date(), dryR
       const total = remaining;
       const constrained = { ...unit, constraints: effectiveConstraints(unit, tasks) };
 
+      const quota = weeklyQuotaOf(unit);
       let placed = 0;
       let sawMatching = false; // 同时通过属性 + 任务约束的时段
       let sawAttrOnly = false; // 仅属性匹配（说明是被任务约束挡掉的）
+      let quotaBlocked = false; // 有合适时段，但本周配额已满
 
       for (const pass of ['strict', 'lenient']) {
         if (remaining <= 0) break;
+        // 反复扫，直到某一轮一个都放不进去为止。
+        // 之前只扫一遍，导致「同一时段」每轮最多放一块，两轮也就两块，
+        // 一段 8 小时的大空档会被白白浪费掉。
+        let progressed = true;
+        let rounds = 0;
+        while (remaining > 0 && progressed && rounds < 200) {
+          progressed = false;
+          rounds += 1;
         for (const inst of instances) {
           if (remaining <= 0) break;
           if (!matchSlot(inst, unit)) continue;
           sawAttrOnly = true;
           if (!constrainSlot(constrained, inst)) continue;
           sawMatching = true;
+
+          // 每周节奏：这一周已经排够块数，就跳过，让任务自然摊到后面的周
+          if (quota > 0) {
+            const k = bucketKey(unit.id, inst.dateKey);
+            if ((perWeek.get(k) ?? 0) >= quota) {
+              quotaBlocked = true;
+              continue;
+            }
+          }
 
           const occ = occupancyFor(inst.id, working);
           if (inst.maxTasks != null && occ.length >= inst.maxTasks) continue;
@@ -313,9 +354,13 @@ export function schedule({ state, weekStart = new Date(), now = new Date(), dryR
           };
           created.push(alloc);
           working.push(alloc);
+          const bk = bucketKey(unit.id, inst.dateKey);
+          perWeek.set(bk, (perWeek.get(bk) ?? 0) + 1);
           cursor = end;
           remaining -= chunk;
           placed += chunk;
+          progressed = true;
+        }
         }
       }
 
@@ -324,6 +369,7 @@ export function schedule({ state, weekStart = new Date(), now = new Date(), dryR
         // 整个跨度里没有任何"还没过去"的时段——这时说"没有属性匹配的时段"是误导
         if (instances.length === 0) reason = 'empty_horizon';
         else if (!sawMatching) reason = sawAttrOnly ? 'constraint_blocked' : 'no_matching_slot';
+        else if (placed === 0 && quotaBlocked) reason = 'quota_limited';
         else if (placed > 0) reason = 'partial';
         unscheduledMap.set(unit.id, {
           taskId: unit.id,

@@ -1157,3 +1157,14 @@ body.resizing, body.resizing * { cursor: ns-resize !important; }
   .daytodo-list { max-height: 38vh; }
   .daytodo-item { padding: 10px 12px; }
 }
+
+/* 每周节奏标签 */
+.tag-quota {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef7f1;
+  color: #0f7a4a;
+  border: 1px solid #cfe8da;
+  white-space: nowrap;
+}

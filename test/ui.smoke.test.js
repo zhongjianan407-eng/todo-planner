@@ -997,6 +997,55 @@ check('清单按时间排序', () => {
   assert.deepEqual(times, sorted, '清单没有按时间升序');
 });
 
+console.log('\n[UI] 每周节奏设置');
+
+check('任务编辑器里有「每周最多排几块」', () => {
+  click($('[data-action="edit-task"]'));
+  const input = document.querySelector('[data-draft="weeklyQuota"]');
+  assert.ok(input, '没有这个字段');
+  assert.equal(input.type, 'number');
+  click($('.modal-head .x'));
+});
+
+check('设置后任务卡片显示节奏标签', () => {
+  const P = window.__PLANNER__;
+  click($('[data-action="edit-task"]'));
+  const input = document.querySelector('[data-draft="weeklyQuota"]');
+  input.value = '1';
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  click($('[data-action="save-task"]'));
+
+  const task = P.getState().tasks.find((t) => Number(t.weeklyQuota) === 1);
+  assert.ok(task, 'weeklyQuota 没保存下来');
+  assert.ok($('.tag-quota'), '卡片上没有节奏标签');
+  assert.match($('.tag-quota').textContent, /每周 1 块/);
+});
+
+check('每周 1 块会让排程摊到多周', () => {
+  const P = window.__PLANNER__;
+  // 造一个 6 小时任务 + 每周 1 块 + 只留周一的深度时段
+  const big = {
+    id: 'weekly_task', title: '微积分复习', status: 'todo', priority: 2, dueAt: null,
+    estMin: 360, attrs: [{ attrId: 'attr_deep', strength: 'require' }],
+    constraints: { allowSlotIds: [], denySlotIds: [], weekdays: [] },
+    parentId: null, order: 0, minChunk: 120, maxChunk: 120, weeklyQuota: 1,
+    source: 'manual', createdAt: new Date().toISOString(), completedAt: null,
+  };
+  const slots = [{
+    id: 'mon', kind: 'weekly', weekday: 1, date: null,
+    start: '09:00', end: '19:00', name: '周一深度', attrs: ['attr_deep'],
+    capacityMin: null, maxTasks: null,
+  }];
+  const base = { ...P.getState(), tasks: [big], slots, allocations: [], settings: { ...P.getState().settings } };
+  const r = P.schedule({ state: { ...base, settings: { ...base.settings, horizonDays: 35 } }, weekStart: new Date() });
+
+  assert.equal(r.created.length, 3, '360 分钟 / 120 = 3 块');
+  assert.equal(new Set(r.created.map((a) => a.date)).size, 3, '应分布在 3 个不同的周');
+  for (const a of r.created) {
+    assert.equal((new Date(a.end) - new Date(a.start)) / 60000, 120, '每块应为 120 分钟');
+  }
+});
+
 check('整个过程没有抛未捕获错误', () => {
   assert.deepEqual(errors, []);
 });

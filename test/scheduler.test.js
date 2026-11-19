@@ -745,44 +745,112 @@ test('DDL 再远也不会超过 180 天上限', () => {
   assert.ok(r.stats.days <= 180, `跨度被夹在 180 天内，实际 ${r.stats.days}`);
 });
 
-/* ============ 15. 跨度内无可用时段 ============ */
+/* ============ 16. 每周节奏（每周最多 N 块） ============ */
 
-console.log('\n[15] 跨度内没有可用时段时的原因');
+console.log('\n[16] 每周节奏');
 
-test('所有时段都在过去时，原因报 empty_horizon 而不是「没有属性匹配的时段」', () => {
-  const task = makeTask({
-    title: '任意任务',
-    estMin: 60,
+/** 同一个周一放 5 个独立时段，一周能塞下 5 块 */
+function fiveMondaySlots() {
+  return ['09:00', '11:00', '13:00', '15:00', '17:00'].map((start, i) => {
+    const endH = String(Number(start.slice(0, 2)) + 2).padStart(2, '0');
+    return makeSlot({ id: `s${i}`, weekday: 1, start, end: `${endH}:00`, attrs: ['attr_deep'] });
+  });
+}
+
+/** 一整段 10 小时的周一空档 */
+function oneBigMonday() {
+  return [makeSlot({ id: 'big', weekday: 1, start: '09:00', end: '19:00', attrs: ['attr_deep'] })];
+}
+
+function weeklyTask(quota) {
+  return makeTask({
+    title: '微积分复习',
+    estMin: 600,
+    minChunk: 120,
+    maxChunk: 120,
+    weeklyQuota: quota,
     attrs: [{ attrId: 'attr_deep', strength: 'require' }],
   });
-  const st = mkState({ tasks: [task], slots: [deepSlot()] });
-  st.settings.horizonDays = 7;
-  // now 放到这一周之后：所有实例都被 "end > now" 过滤掉
-  const future = addDays(BASE, 30);
-  const r = schedule({ state: st, weekStart: BASE, now: future });
+}
 
-  assert.equal(r.created.length, 0);
+function runWeekly(quota, days = 35, slots = fiveMondaySlots(), allocations = []) {
+  const st = mkState({ tasks: [weeklyTask(quota)], slots, allocations });
+  st.settings.horizonDays = days;
+  return schedule({ state: st, weekStart: BASE, now: NOW });
+}
+
+test('不限每周块数时，一周内一次性排完', () => {
+  const r = runWeekly(0);
+  assert.equal(r.created.length, 5, '600 分钟 / 120 = 5 块');
+  const dates = [...new Set(r.created.map((a) => a.date))];
+  assert.equal(dates.length, 1, '不限配额时应挤在同一个周一');
+});
+
+test('每周最多 1 块时，任务摊到 5 个不同的周', () => {
+  const r = runWeekly(1);
+  assert.equal(r.created.length, 5);
+
+  const dates = [...new Set(r.created.map((a) => a.date))].sort();
+  assert.equal(dates.length, 5, '应分布在 5 个不同的周一');
+
+  for (let i = 1; i < dates.length; i += 1) {
+    const prev = new Date(`${dates[i - 1]}T00:00:00`);
+    const cur = new Date(`${dates[i]}T00:00:00`);
+    assert.equal(
+      Math.round((cur - prev) / 86400000),
+      7,
+      `${dates[i - 1]} → ${dates[i]} 不是隔一周`,
+    );
+  }
+});
+
+test('每周最多 2 块时，5 块用掉 3 周', () => {
+  const r = runWeekly(2);
+  assert.equal(r.created.length, 5);
+  assert.equal(new Set(r.created.map((a) => a.date)).size, 3, '2 + 2 + 1 = 3 周');
+});
+
+test('跨度不够时，剩下的报「只排进去一部分」', () => {
+  const r = runWeekly(1, 7); // 只有一周
+  assert.equal(r.created.length, 1, '一周只能排 1 块');
   assert.equal(r.unscheduled.length, 1);
-  assert.equal(r.unscheduled[0].reason, 'empty_horizon');
-  assert.equal(r.stats.capacityMin, 0, '容量应为 0');
+  assert.equal(r.unscheduled[0].reason, 'partial');
+  assert.equal(r.unscheduled[0].remaining, 480);
 });
 
-test('完全没配时段时也报 empty_horizon', () => {
-  const task = makeTask({ title: '任务', estMin: 60, attrs: [{ attrId: 'attr_deep', strength: 'require' }] });
-  const st = mkState({ tasks: [task], slots: [] });
+test('已有的锁定分片也占配额', () => {
+  const task = weeklyTask(1);
+  const locked = {
+    id: 'locked1',
+    taskId: task.id,
+    date: MON,
+    slotId: 'big',
+    start: atDateTime(MON, '09:00').toISOString(),
+    end: atDateTime(MON, '11:00').toISOString(),
+    locked: true,
+    source: 'manual',
+  };
+  const st = mkState({ tasks: [task], slots: oneBigMonday(), allocations: [locked] });
+  st.settings.horizonDays = 7;
   const r = schedule({ state: st, weekStart: BASE, now: NOW });
-  assert.equal(r.unscheduled[0].reason, 'empty_horizon');
+
+  assert.equal(r.created.length, 0, '这一周配额已被锁定那块占掉');
+  const u = r.unscheduled.find((x) => x.taskId === task.id);
+  assert.equal(u.reason, 'quota_limited');
 });
 
-test('有可用时段但属性不匹配时，仍然报 no_matching_slot', () => {
-  const task = makeTask({
-    title: '要学习时段',
-    estMin: 60,
-    attrs: [{ attrId: 'attr_study', strength: 'require' }],
-  });
-  const st = mkState({ tasks: [task], slots: [deepSlot()] });
-  const r = schedule({ state: st, weekStart: BASE, now: NOW });
-  assert.equal(r.unscheduled[0].reason, 'no_matching_slot');
+test('每块时长由单块上限决定', () => {
+  const r = runWeekly(1);
+  for (const a of r.created) {
+    assert.equal(dur(a), 120, `每块应为 120 分钟，实际 ${dur(a)}`);
+  }
+});
+
+test('只有一个大空档时也会反复填充到排满（不再只放两块）', () => {
+  const r = runWeekly(0, 7, oneBigMonday());
+  assert.equal(r.created.length, 5, '10 小时空档应能拆成 5 块');
+  const total = r.created.reduce((s, a) => s + dur(a), 0);
+  assert.equal(total, 600);
 });
 
 /* ============ 汇总 ============ */

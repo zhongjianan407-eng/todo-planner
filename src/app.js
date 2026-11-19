@@ -214,6 +214,11 @@ function renderTaskCard(state, task, { isChild = false } = {}) {
           <span class="prio p${task.priority}">${PRIORITY_LABEL[task.priority] ?? '中'}</span>
           <span class="title-text">${esc(task.title)}</span>
           ${kids.length ? `<span class="tag-steps">${kids.length} 步</span>` : ''}
+          ${
+            Number(task.weeklyQuota) > 0
+              ? `<span class="tag-quota" title="每周最多排几块">每周 ${Number(task.weeklyQuota)} 块</span>`
+              : ''
+          }
           ${consTxt ? `<span class="tag-cons" title="排程约束">⧗ ${esc(consTxt)}</span>` : ''}
         </div>
         <div class="task-meta">
@@ -469,6 +474,7 @@ function renderUnscheduled(state, result) {
     no_matching_slot: '没有属性匹配的时段',
     constraint_blocked: '被任务的时段约束挡住了',
     no_capacity: '匹配时段容量已满',
+    quota_limited: '被每周上限挡住了，拉长跨度或调大上限',
     partial: '只排进去一部分',
   };
   return `
@@ -551,6 +557,15 @@ function renderTaskModal(state) {
             </div>
           </label>
         </div>
+        <label class="field">
+          <span>每周最多排几块（0 = 不限）</span>
+          <input class="input" type="number" min="0" max="14" step="1" data-draft="weeklyQuota"
+            value="${Number(d.weeklyQuota) || 0}">
+          <span class="field-note">
+            设成 1，这个任务每周只排一块，会自然摊到后面几周。
+            配合上面的「单块上限」控制每次时长，例如上限填 120 就是每次 2 小时。
+          </span>
+        </label>
         <div class="field">
           <span>属性（点一下切换：必须 → 偏好 → 排除 → 关闭）</span>
           <div class="attr-picker">
@@ -1709,7 +1724,7 @@ function onDraftInput(e) {
   const m = ui.taskModal ?? ui.slotModal;
   if (!m) return;
   let v = e.target.value;
-  if (['priority', 'estMin', 'minChunk', 'maxChunk', 'weekday'].includes(field)) v = Number(v);
+  if (['priority', 'estMin', 'minChunk', 'maxChunk', 'weekday', 'weeklyQuota'].includes(field)) v = Number(v);
   if (['capacityMin', 'maxTasks'].includes(field)) v = v === '' ? null : Number(v);
   if (field === 'dueAt') v = localInputToIso(v);
   if (field === 'date') v = v || null;
