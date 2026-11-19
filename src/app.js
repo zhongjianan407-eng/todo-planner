@@ -2600,5 +2600,27 @@ document.title = SITE_TITLE;
   meta.content = SITE.description;
 }
 
-render();
+/*
+ * 启动包一层 try/catch：
+ * iOS Safari 对模块内的运行时异常不一定触发 window.onerror，
+ * 一旦首次 render 抛错，用户看到的就是纯白屏、且抓不到任何线索。
+ * 这里把错误直接写到页面上。
+ */
+try {
+  render();
+} catch (err) {
+  const el = document.getElementById('app');
+  if (el) {
+    el.innerHTML =
+      '<div style="padding:40px 24px;font-family:-apple-system,sans-serif;color:#171a20">' +
+      '<h2 style="font-size:17px;margin:0 0 10px">启动失败</h2>' +
+      '<p style="color:#6b7480;font-size:13px;margin:0 0 12px">把下面这段发给我就能定位：</p>' +
+      '<pre style="background:#f4f6f9;border:1px solid #e3e7ee;padding:12px;border-radius:8px;' +
+      'font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' +
+      String((err && err.stack) || err).replace(/&/g, '&amp;').replace(/</g, '&lt;') +
+      '</pre></div>';
+  }
+  throw err;
+}
+
 window.__PLANNER__ = { getState, update, schedule, ui, focus };
